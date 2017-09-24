@@ -1,0 +1,11 @@
+TESTS = cmd_protocol_test cmd_parser_test
+check_PROGRAMS = cmd_protocol_test cmd_parser_test
+
+cmd_protocol_test_SOURCES = cmd_protocol_test.c cmd_protocol.c
+cmd_protocol_test_CFLAGS = @cmocka_CFLAGS@
+cmd_protocol_test_LDADD = @cmocka_LIBS@
+#cmd_protocol_test_LDFLAGS = -static
+
+cmd_parser_test_SOURCES = cmd_parser.c cmd_parser.h cmd_parser_test.c
+cmd_parser_test_CFLAGS = @cmocka_CFLAGS@
+cmd_parser_test_LDADD = @cmocka_LIBS@
