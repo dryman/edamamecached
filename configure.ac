@@ -1,4 +1,4 @@
-AC_INIT([SAKEDB], [0.1.0])
+AC_INIT([edamamecached], [0.1.0])
 
 AC_CONFIG_SRCDIR([cmd_protocol.h])
 AC_CONFIG_AUX_DIR([build-aux])

@@ -1,5 +1,5 @@
-#ifndef SAKEDB_CMD_PROTOCOL_H_
-#define SAKEDB_CMD_PROTOCOL_H_ 1
+#ifndef EDAMAME_CMD_PROTOCOL_H_
+#define EDAMAME_CMD_PROTOCOL_H_ 1
 
 #include <stdint.h>
 
@@ -73,7 +73,7 @@ enum cmd_opcode
   PROTOCOL_BINARY_CMD_GATQ = 0x1e,
   PROTOCOL_BINARY_CMD_GATK = 0x23,
   PROTOCOL_BINARY_CMD_GATKQ = 0x24,
-  // sakedb specific
+  // edamame specific
   PROTOCOL_BINARY_CMD_TOUCHQ = 0x1f,
 } __attribute__((packed));
 

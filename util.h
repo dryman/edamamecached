@@ -1,5 +1,5 @@
-#ifndef SAKEDB_UTIL_H_
-#define SAKEDB_UTIL_H_ 1
+#ifndef EDAMAME_UTIL_H_
+#define EDAMAME_UTIL_H_ 1
 
 #include <arpa/inet.h>
 #include <stdint.h>

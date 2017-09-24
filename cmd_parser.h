@@ -1,5 +1,5 @@
-#ifndef SAKEDB_PARSER_H_
-#define SAKEDB_PARSER_H_ 1
+#ifndef EDAMAME_PARSER_H_
+#define EDAMAME_PARSER_H_ 1
 
 #include <stdbool.h>
 #include <uv.h>
