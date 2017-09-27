@@ -17,50 +17,16 @@ static char CMD_STR_TOUCH[6] = "touch ";
 static char CMD_STR_NOREPLY[7] = "noreply";
 
 void reset_cmd_handler(cmd_handler* cmd);
-ssize_t ascii_cmd_error(cmd_handler* cmd, ssize_t nread, char* buf);
-ssize_t ascii_cpbuf(cmd_handler* cmd, ssize_t nread, char* buf);
+ssize_t ascii_cmd_error(cmd_handler* cmd, ssize_t nbyte, char* buf);
+ssize_t ascii_cpbuf(cmd_handler* cmd, ssize_t nbyte, char* buf);
 bool parse_uint32(uint32_t* dest, char** iter);
 bool parse_uint64(uint64_t* dest, char** iter);
 void ascii_parse_cmd(cmd_handler* cmd);
-ssize_t cmd_parse_ascii_value(cmd_handler* cmd, ssize_t nread, char* buf);
-void cmd_process_ascii_ready(cmd_handler* cmd);
-ssize_t cmd_parse_get(cmd_handler* cmd, ssize_t nread, char* buf);
+ssize_t cmd_parse_ascii_value(cmd_handler* cmd, ssize_t nbyte, char* buf);
+ssize_t cmd_parse_get(cmd_handler* cmd, ssize_t nbyte, char* buf);
 
 extern void process_cmd_get(cmd_handler* cmd);
 
-void read_cb(uv_stream_t* client, ssize_t nread, const uv_buf_t* buf)
-{
-  cmd_handler* cmd = (cmd_handler*)client;
-  ssize_t idx = 0;
-
-  if (nread == -1)
-    {
-      reset_cmd_handler(cmd);
-      // recycle buf
-    }
-
-  if (nread == 0)
-    {
-      // recycle buf
-    }
-
-  while (idx < nread)
-    {
-      /*
-      switch (cmd->state)
-        {
-        case CMD_CLEAN:
-        case ASCII_PENDING_RAWBUF:
-        case ASCII_PENDING_GET_MULTI:
-        case ASCII_PENDING_VALUE:
-        case ASCII_ERROR:
-        case BINARY_PENDING_RAWBUF:
-        case BINARY_PENDING_VALUE:
-        }
-        */
-    }
-  // recycle buf
-}
 
 // need a ascii flush error handler
 void reset_cmd_handler(cmd_handler* cmd)
@@ -78,29 +44,29 @@ void reset_cmd_handler(cmd_handler* cmd)
   cmd->value_stored = 0;
 }
 
-ssize_t ascii_cmd_error(cmd_handler* cmd, ssize_t nread, char* buf)
+ssize_t ascii_cmd_error(cmd_handler* cmd, ssize_t nbyte, char* buf)
 {
   ssize_t idx = 0;
-  while (idx < nread && buf[idx] != '\r') idx++;
+  while (idx < nbyte && buf[idx] != '\r') idx++;
 
   // we reached to the end of buffer, but hasn't find '\r'
   // state remain ASCII_ERROR
-  if (idx == nread) return idx;
+  if (idx == nbyte) return idx;
 
   // We found '\r', now reset the state to CMD_CLEAN
   reset_cmd_handler(cmd);
   // There might be an additional '\n'
-  if (idx < nread - 1 && buf[idx + 1] == '\n') return idx + 1;
+  if (idx < nbyte - 1 && buf[idx + 1] == '\n') return idx + 1;
   return idx;
 }
 
-ssize_t ascii_cpbuf(cmd_handler* cmd, ssize_t nread, char* buf)
+ssize_t ascii_cpbuf(cmd_handler* cmd, ssize_t nbyte, char* buf)
 {
   ssize_t idx = 0, linebreak;
   if (cmd->state == CMD_CLEAN)
     {
-      while (idx < nread && isspace(buf[idx])) idx++;
-      if (idx == nread) return nread;
+      while (idx < nbyte && isspace(buf[idx])) idx++;
+      if (idx == nbyte) return nbyte;
       if (memeq(&buf[idx], CMD_STR_GET, sizeof(CMD_STR_GET)))
         {
           cmd->state = ASCII_PENDING_GET_MULTI;
@@ -132,9 +98,9 @@ ssize_t ascii_cpbuf(cmd_handler* cmd, ssize_t nread, char* buf)
         }
       return 1;
     }
-  while (linebreak < nread && isprint(buf[linebreak]))
+  while (linebreak < nbyte && isprint(buf[linebreak]))
     linebreak++;
-  if (linebreak == nread)
+  if (linebreak == nbyte)
     {
       if (linebreak - idx - cmd->buf_used >= CMD_BUF_SIZE)
         {
@@ -153,7 +119,7 @@ ssize_t ascii_cpbuf(cmd_handler* cmd, ssize_t nread, char* buf)
       cmd->state = ASCII_ERROR;
       return linebreak;
     }
-  if (linebreak == nread - 1)
+  if (linebreak == nbyte - 1)
     {
       cmd->state = ASCII_PENDING_RAWBUF;
       cmd->has_pending_newline = true;
@@ -577,10 +543,10 @@ void ascii_parse_cmd(cmd_handler* cmd)
     }
 }
 
-ssize_t cmd_parse_ascii_value(cmd_handler* cmd, ssize_t nread, char* buf)
+ssize_t cmd_parse_ascii_value(cmd_handler* cmd, ssize_t nbyte, char* buf)
 {
   ssize_t partial_len;
-  if (cmd->value_stored == 0 && nread > cmd->req.bodylen + 1)
+  if (cmd->value_stored == 0 && nbyte > cmd->req.bodylen + 1)
     {
       if (buf[cmd->req.bodylen] == '\r')
         {
@@ -607,11 +573,11 @@ ssize_t cmd_parse_ascii_value(cmd_handler* cmd, ssize_t nread, char* buf)
       cmd->val_copied = true;
     }
   partial_len = cmd->req.bodylen - cmd->value_stored;
-  if (nread <= partial_len)
+  if (nbyte <= partial_len)
     {
-      memcpy(&cmd->value[cmd->value_stored], buf, nread);
-      cmd->value_stored += nread;
-      return nread;
+      memcpy(&cmd->value[cmd->value_stored], buf, nbyte);
+      cmd->value_stored += nbyte;
+      return nbyte;
     }
   else if (buf[partial_len] == '\r')
     {
@@ -625,7 +591,7 @@ ssize_t cmd_parse_ascii_value(cmd_handler* cmd, ssize_t nread, char* buf)
   return partial_len + 1;
 }
 
-ssize_t cmd_parse_get(cmd_handler* cmd, ssize_t nread, char* buf)
+ssize_t cmd_parse_get(cmd_handler* cmd, ssize_t nbyte, char* buf)
 {
   ssize_t idx1, idx2;
   // idx1 for scanning space
@@ -633,9 +599,9 @@ ssize_t cmd_parse_get(cmd_handler* cmd, ssize_t nread, char* buf)
   idx1 = idx2 = 0;
   if (cmd->buf_used > 0)
     {
-      while (idx2 < nread && isgraph(buf[idx2]))
+      while (idx2 < nbyte && isgraph(buf[idx2]))
         idx2++;
-      if (idx2 == nread)
+      if (idx2 == nbyte)
         {
           if (idx2 + cmd->buf_used >= KEY_MAX_SIZE)
             {
@@ -675,9 +641,9 @@ ssize_t cmd_parse_get(cmd_handler* cmd, ssize_t nread, char* buf)
       return idx2;
     }
 
-  while (idx1 < nread && buf[idx1] == ' ')
+  while (idx1 < nbyte && buf[idx1] == ' ')
     idx1++;
-  if (idx1 == nread)
+  if (idx1 == nbyte)
     return idx1;
   if (buf[idx1] == '\r')
     {
@@ -685,14 +651,14 @@ ssize_t cmd_parse_get(cmd_handler* cmd, ssize_t nread, char* buf)
       return idx1 + 1;
     }
   idx2 = idx1;
-  while (idx2 < nread && isgraph(buf[idx2]))
+  while (idx2 < nbyte && isgraph(buf[idx2]))
     idx2++;
   if (idx2 == idx1)
     {
       cmd->state = ASCII_ERROR;
       return idx2;
     }
-  if (idx2 == nread)
+  if (idx2 == nbyte)
     {
       if (idx2 - idx1 >= KEY_MAX_SIZE)
         {
@@ -719,9 +685,250 @@ ssize_t cmd_parse_get(cmd_handler* cmd, ssize_t nread, char* buf)
   return idx2;
 }
 
-void cmd_process_ascii_ready(cmd_handler* cmd)
+ssize_t binary_cpbuf(cmd_handler* cmd, ssize_t nbyte, char* buf)
 {
-  // in testing we simply reset the cmd
-  reset_cmd_handler(cmd);
+  ssize_t cpbyte = 24 - cmd->buf_used;
+  if (nbyte < cpbyte)
+    {
+      memcpy(cmd->buffer, buf, nbyte);
+      cmd->buf_used += nbyte;
+      cmd->state = BINARY_PENDING_RAWBUF;
+      return nbyte;
+    }
+  memcpy(&cmd->buffer[cmd->buf_used], buf, cpbyte);
+  memcpy(&cmd->req, cmd->buffer, 24);
+  cmd->buf_used = 0;
+  cmd_req_ntoh(&cmd->req);
+  switch (cmd->req.op)
+    {
+    case PROTOCOL_BINARY_CMD_GET:
+    case PROTOCOL_BINARY_CMD_GETQ:
+    case PROTOCOL_BINARY_CMD_GETK:
+    case PROTOCOL_BINARY_CMD_GETKQ:
+      cmd->state = BINARY_PENDING_PARSE_KEY;
+      break;
+    case PROTOCOL_BINARY_CMD_SET:
+    case PROTOCOL_BINARY_CMD_ADD:
+    case PROTOCOL_BINARY_CMD_REPLACE:
+    case PROTOCOL_BINARY_CMD_SETQ:
+    case PROTOCOL_BINARY_CMD_ADDQ:
+    case PROTOCOL_BINARY_CMD_REPLACEQ:
+      cmd->state = BINARY_PENDING_PARSE_EXTRA;
+      break;
+    case PROTOCOL_BINARY_CMD_DELETE:
+    case PROTOCOL_BINARY_CMD_DELETEQ:
+      cmd->state = BINARY_PENDING_PARSE_KEY;
+      break;
+    case PROTOCOL_BINARY_CMD_INCREMENT:
+    case PROTOCOL_BINARY_CMD_DECREMENT:
+    case PROTOCOL_BINARY_CMD_INCREMENTQ:
+    case PROTOCOL_BINARY_CMD_DECREMENTQ:
+    case PROTOCOL_BINARY_CMD_FLUSH:
+    case PROTOCOL_BINARY_CMD_FLUSHQ:
+      cmd->state = BINARY_PENDING_PARSE_EXTRA;
+      break;
+    case PROTOCOL_BINARY_CMD_QUIT:
+    case PROTOCOL_BINARY_CMD_QUITQ:
+    case PROTOCOL_BINARY_CMD_VERSION:
+    case PROTOCOL_BINARY_CMD_NOOP:
+      cmd->state = BINARY_CMD_READY;
+      break;
+    case PROTOCOL_BINARY_CMD_APPEND:
+    case PROTOCOL_BINARY_CMD_PREPEND:
+    case PROTOCOL_BINARY_CMD_APPENDQ:
+    case PROTOCOL_BINARY_CMD_PREPENDQ:
+      cmd->state = BINARY_PENDING_PARSE_KEY;
+      break;
+    case PROTOCOL_BINARY_CMD_STAT:
+      cmd->state = BINARY_PENDING_PARSE_KEY;
+      break;
+    case PROTOCOL_BINARY_CMD_TOUCH:
+    case PROTOCOL_BINARY_CMD_GAT:
+    case PROTOCOL_BINARY_CMD_GATQ:
+    case PROTOCOL_BINARY_CMD_GATK:
+    case PROTOCOL_BINARY_CMD_GATKQ:
+      cmd->state = BINARY_PENDING_PARSE_EXTRA;
+      break;
+    default:
+      // Unknown type, close socket
+      cmd->req.op = PROTOCOL_BINARY_CMD_QUIT;
+      cmd->state = BINARY_CMD_READY;
+    }
+  return cpbyte;
 }
 
+ssize_t binary_cmd_parse_extra(cmd_handler* cmd, ssize_t nbyte, char* buf)
+{
+  ssize_t exbyte, cpbyte;
+  switch (cmd->req.op)
+    {
+    case PROTOCOL_BINARY_CMD_SET:
+    case PROTOCOL_BINARY_CMD_ADD:
+    case PROTOCOL_BINARY_CMD_REPLACE:
+    case PROTOCOL_BINARY_CMD_SETQ:
+    case PROTOCOL_BINARY_CMD_ADDQ:
+    case PROTOCOL_BINARY_CMD_REPLACEQ:
+      exbyte = 8;
+      break;
+    case PROTOCOL_BINARY_CMD_INCREMENT:
+    case PROTOCOL_BINARY_CMD_DECREMENT:
+    case PROTOCOL_BINARY_CMD_INCREMENTQ:
+    case PROTOCOL_BINARY_CMD_DECREMENTQ:
+      exbyte = 20;
+      break;
+    case PROTOCOL_BINARY_CMD_FLUSH:
+    case PROTOCOL_BINARY_CMD_TOUCH:
+    case PROTOCOL_BINARY_CMD_GAT:
+    case PROTOCOL_BINARY_CMD_GATQ:
+    case PROTOCOL_BINARY_CMD_GATK:
+    case PROTOCOL_BINARY_CMD_GATKQ:
+      exbyte = 4;
+      break;
+    default:
+      cmd->req.op = PROTOCOL_BINARY_CMD_QUIT;
+      cmd->state = BINARY_CMD_READY;
+      return 0;
+    }
+
+  cpbyte = exbyte - cmd->buf_used;
+  if (nbyte < cpbyte)
+    {
+      memcpy(&cmd->buffer[cmd->buf_used], buf, nbyte);
+      cmd->buf_used += nbyte;
+      return nbyte;
+    }
+  memcpy(&cmd->buffer[cmd->buf_used], buf, cpbyte);
+  memcpy(&cmd->extra, cmd->buffer, cpbyte);
+  cmd->buf_used = 0;
+
+  switch (cmd->req.op)
+    {
+    case PROTOCOL_BINARY_CMD_SET:
+    case PROTOCOL_BINARY_CMD_ADD:
+    case PROTOCOL_BINARY_CMD_REPLACE:
+    case PROTOCOL_BINARY_CMD_SETQ:
+    case PROTOCOL_BINARY_CMD_ADDQ:
+    case PROTOCOL_BINARY_CMD_REPLACEQ:
+      cmd->extra.twoval.flags = ntohl(cmd->extra.twoval.flags);
+      cmd->extra.twoval.expiration = ntohl(cmd->extra.twoval.expiration);
+      cmd->state = BINARY_PENDING_PARSE_KEY;
+      break;
+    case PROTOCOL_BINARY_CMD_INCREMENT:
+    case PROTOCOL_BINARY_CMD_DECREMENT:
+    case PROTOCOL_BINARY_CMD_INCREMENTQ:
+    case PROTOCOL_BINARY_CMD_DECREMENTQ:
+      cmd->extra.numeric.addition_value =
+       ntohll(cmd->extra.numeric.addition_value);
+      cmd->extra.numeric.init_value =
+       ntohll(cmd->extra.numeric.init_value);
+      cmd->extra.numeric.expiration = ntohl(cmd->extra.numeric.expiration);
+      cmd->state = BINARY_PENDING_PARSE_KEY;
+      break;
+    case PROTOCOL_BINARY_CMD_FLUSH:
+      cmd->extra.oneval.expiration = ntohl(cmd->extra.oneval.expiration);
+      cmd->state = BINARY_CMD_READY;
+      break;
+    case PROTOCOL_BINARY_CMD_TOUCH:
+    case PROTOCOL_BINARY_CMD_GAT:
+    case PROTOCOL_BINARY_CMD_GATQ:
+    case PROTOCOL_BINARY_CMD_GATK:
+    case PROTOCOL_BINARY_CMD_GATKQ:
+      cmd->extra.oneval.expiration = ntohl(cmd->extra.oneval.expiration);
+      cmd->state = BINARY_PENDING_PARSE_KEY;
+      break;
+    default:
+      cmd->req.op = PROTOCOL_BINARY_CMD_QUIT;
+      cmd->state = BINARY_CMD_READY;
+    }
+  return cpbyte;
+}
+
+ssize_t binary_cmd_parse_key(cmd_handler* cmd, ssize_t nbyte, char* buf)
+{
+  ssize_t cpbyte;
+  cpbyte = cmd->req.keylen - cmd->buf_used;
+  if (nbyte < cpbyte)
+    {
+      memcpy(&cmd->buffer[cmd->buf_used], buf, nbyte);
+      cmd->buf_used += nbyte;
+      return nbyte;
+    }
+
+  memcpy(&cmd->buffer[cmd->buf_used], buf, cpbyte);
+  cmd->buf_used += cpbyte;
+  cmd->key = cmd->buffer;
+  switch (cmd->req.op)
+    {
+    case PROTOCOL_BINARY_CMD_GET:
+    case PROTOCOL_BINARY_CMD_GETQ:
+    case PROTOCOL_BINARY_CMD_GETK:
+    case PROTOCOL_BINARY_CMD_GETKQ:
+      cmd->state = BINARY_CMD_READY;
+      break;
+    case PROTOCOL_BINARY_CMD_SET:
+    case PROTOCOL_BINARY_CMD_ADD:
+    case PROTOCOL_BINARY_CMD_REPLACE:
+    case PROTOCOL_BINARY_CMD_SETQ:
+    case PROTOCOL_BINARY_CMD_ADDQ:
+    case PROTOCOL_BINARY_CMD_REPLACEQ:
+      cmd->state = BINARY_PENDING_VALUE;
+      break;
+    case PROTOCOL_BINARY_CMD_DELETE:
+    case PROTOCOL_BINARY_CMD_DELETEQ:
+    case PROTOCOL_BINARY_CMD_INCREMENT:
+    case PROTOCOL_BINARY_CMD_DECREMENT:
+    case PROTOCOL_BINARY_CMD_INCREMENTQ:
+    case PROTOCOL_BINARY_CMD_DECREMENTQ:
+      cmd->state = BINARY_CMD_READY;
+      break;
+    case PROTOCOL_BINARY_CMD_APPEND:
+    case PROTOCOL_BINARY_CMD_PREPEND:
+    case PROTOCOL_BINARY_CMD_APPENDQ:
+    case PROTOCOL_BINARY_CMD_PREPENDQ:
+      cmd->state = BINARY_PENDING_VALUE;
+      break;
+    case PROTOCOL_BINARY_CMD_STAT:
+    case PROTOCOL_BINARY_CMD_TOUCH:
+    case PROTOCOL_BINARY_CMD_GAT:
+    case PROTOCOL_BINARY_CMD_GATQ:
+    case PROTOCOL_BINARY_CMD_GATK:
+    case PROTOCOL_BINARY_CMD_GATKQ:
+      cmd->state = BINARY_CMD_READY;
+      break;
+    default:
+      // Unknown type, close socket
+      cmd->req.op = PROTOCOL_BINARY_CMD_QUIT;
+      cmd->state = BINARY_CMD_READY;
+    }
+  return cpbyte;
+}
+
+ssize_t binary_cmd_parse_value(cmd_handler* cmd, ssize_t nbyte, char* buf)
+{
+  ssize_t partial_len;
+  if (cmd->value_stored == 0 && nbyte >= cmd->req.bodylen)
+    {
+      cmd->value = buf;
+      cmd->val_copied = false;
+      cmd->value_stored = cmd->req.bodylen;
+      cmd->state = BINARY_CMD_READY;
+      return cmd->req.bodylen;
+    }
+  if (cmd->value == NULL)
+    {
+      cmd->value = malloc(cmd->req.bodylen);
+      cmd->val_copied = true;
+    }
+  partial_len = cmd->req.bodylen - cmd->value_stored;
+  if (nbyte <= partial_len)
+    {
+      memcpy(&cmd->value[cmd->value_stored], buf, nbyte);
+      cmd->value_stored += nbyte;
+      return nbyte;
+    }
+  memcpy(&cmd->value[cmd->value_stored],
+         buf, partial_len);
+  cmd->value_stored = cmd->req.bodylen;
+  cmd->state = BINARY_CMD_READY;
+  return partial_len;
+}

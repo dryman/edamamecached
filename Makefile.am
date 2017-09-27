@@ -6,6 +6,10 @@ cmd_protocol_test_CFLAGS = @cmocka_CFLAGS@
 cmd_protocol_test_LDADD = @cmocka_LIBS@
 #cmd_protocol_test_LDFLAGS = -static
 
-cmd_parser_test_SOURCES = cmd_parser.c cmd_parser.h cmd_parser_test.c
+cmd_parser_test_SOURCES = \
+  cmd_protocol.c \
+  cmd_parser.c \
+  cmd_parser.h \
+  cmd_parser_test.c
 cmd_parser_test_CFLAGS = @cmocka_CFLAGS@
 cmd_parser_test_LDADD = @cmocka_LIBS@
