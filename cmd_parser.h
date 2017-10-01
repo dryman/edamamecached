@@ -2,7 +2,6 @@
 #define EDAMAME_PARSER_H_ 1
 
 #include <stdbool.h>
-#include <uv.h>
 #include "cmd_protocol.h"
 
 #define CMD_BUF_SIZE 512
@@ -17,12 +16,10 @@ enum cmd_state
   ASCII_PENDING_RAWBUF,
   ASCII_PENDING_PARSE_CMD,
   ASCII_PENDING_GET_MULTI,
-  ASCII_PENDING_GET_CAS_MULTI,
   ASCII_PENDING_VALUE,
   ASCII_CMD_READY,
   ASCII_ERROR,
   BINARY_PENDING_RAWBUF,
-  BINARY_PENDING_PARSE_CMD,
   BINARY_PENDING_PARSE_EXTRA,
   BINARY_PENDING_PARSE_KEY,
   BINARY_PENDING_VALUE,
@@ -31,7 +28,6 @@ enum cmd_state
 
 struct cmd_handler
 {
-  uv_tcp_t tcp;
   cmd_state state;
   char buffer[CMD_BUF_SIZE];
   ssize_t buf_used;

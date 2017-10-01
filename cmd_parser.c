@@ -27,6 +27,11 @@ ssize_t cmd_parse_get(cmd_handler* cmd, ssize_t nbyte, char* buf);
 
 extern void process_cmd_get(cmd_handler* cmd);
 
+ssize_t binary_cpbuf(cmd_handler* cmd, ssize_t nbyte, char* buf)
+ssize_t binary_cmd_parse_extra(cmd_handler* cmd, ssize_t nbyte, char* buf)
+ssize_t binary_cmd_parse_key(cmd_handler* cmd, ssize_t nbyte, char* buf)
+ssize_t binary_cmd_parse_value(cmd_handler* cmd, ssize_t nbyte, char* buf)
+
 
 // need a ascii flush error handler
 void reset_cmd_handler(cmd_handler* cmd)
@@ -74,7 +79,7 @@ ssize_t ascii_cpbuf(cmd_handler* cmd, ssize_t nbyte, char* buf)
         }
       if (memeq(&buf[idx], CMD_STR_GETS, sizeof(CMD_STR_GETS)))
         {
-          cmd->state = ASCII_PENDING_GET_CAS_MULTI;
+          cmd->state = ASCII_PENDING_GET_MULTI;
           return idx + sizeof(CMD_STR_GETS);
         }
       linebreak = idx;
