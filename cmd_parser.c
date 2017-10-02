@@ -81,7 +81,7 @@ ssize_t ascii_cpbuf(cmd_handler* cmd, ssize_t nbyte, char* buf)
         }
       if (memeq(&buf[idx], CMD_STR_GETS, sizeof(CMD_STR_GETS)))
         {
-          cmd->state = ASCII_PENDING_GET_MULTI;
+          cmd->state = ASCII_PENDING_GET_CAS_MULTI;
           return idx + sizeof(CMD_STR_GETS);
         }
       linebreak = idx;
