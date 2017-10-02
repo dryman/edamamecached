@@ -9,122 +9,80 @@
 #include <fcntl.h>
 #include <errno.h>
 #include <pthread.h>
+#include <syslog.h>
+#include <string.h>
 
 static int port_num = 7500;
 // max value: 32767
 static int poll_fd_max = 256;
 
+struct thread_pipe {
+  int thread_id;
+  int pipefd[2];
+};
+
 #define BUF_SIZE 65536
 #define POLL_TIMEOUT 1000
 
 void* ev_loop(void* context) {
-  int thread_id, listen_fd, rc,
-      poll_fd_num, poll_fd_cnum;
-  const int on = 1;
+  struct thread_pipe* tp = (struct thread_pipe*)context;
+  int fdbuf[256];
+  int rc, poll_fd_num, poll_fd_cnum, fdbuf_num;
   struct sockaddr_in addr;
-  struct pollfd* poll_fds;
+  struct pollfd clientfds[poll_fd_max];
   char buffer[BUF_SIZE];
-  
-  thread_id = (int)(size_t)context;
 
-  // TODO support ipv6 bindings from options
-  addr = (struct sockaddr_in) {
-    .sin_family = AF_INET,
-    .sin_port = htons(port_num),
-    .sin_addr.s_addr = htonl(INADDR_ANY),
-  };
-  if ((listen_fd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
-    // TODO use syslog and strerror for error msg
-    perror("create socket on localhost failed");
-    exit(-1);
+  clientfds[0].fd = tp->pipefd[0];
+  clientfds[0].events = POLLIN;
+  for (int i = 1; i < poll_fd_max; i++) {
+    clientfds[i].fd = -1;
   }
-  if (setsockopt(listen_fd, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on))) {
-    perror("set socket opt SO_REUSEADDR failed");
-    exit(-1);
-  }
-  if (setsockopt(listen_fd, SOL_SOCKET, SO_REUSEPORT, &on, sizeof(on))) {
-    perror("set socket opt SO_REUSEPORT failed");
-    exit(-1);
-  }
-  rc = fcntl(listen_fd, F_GETFL, 0);
-  fcntl(listen_fd, F_SETFL, rc | O_NONBLOCK);
-  rc = fcntl(listen_fd, F_GETFL, 0);
-  if (!(rc & O_NONBLOCK)) {
-    fprintf(stderr, "setting non blocking socket failed\n");
-    exit(-1);
-  }
-  if (bind(listen_fd, (struct sockaddr*)&addr, sizeof(addr))) {
-    perror("bind localhost failed");
-    exit(-1);
-  }
-  if (listen(listen_fd, SOMAXCONN)) {
-    perror("listen failed");
-    exit(-1);
-  }
-  printf("listening from thread id: %d\n", thread_id);
-
-  poll_fds = calloc(poll_fd_max, sizeof(struct pollfd));
-  for (int i = 0; i < poll_fd_max; i++)
-    poll_fds[i].fd = -1;
-  poll_fds[0].fd = listen_fd;
-  poll_fds[0].events = POLLIN;
   poll_fd_num = 1;
 
+  syslog(LOG_INFO, "init thread %d", tp->thread_id);
+
   while (1) {
-    rc = poll(poll_fds, poll_fd_num, POLL_TIMEOUT);
+    rc = poll(clientfds, poll_fd_num, POLL_TIMEOUT);
     if (rc < 0) {
-      // TODO may need to handle signal here.
-      perror("poll error");
-      exit(-1);
+      syslog(LOG_ERR, "poll error: %s", strerror(errno));
+      continue;
     }
+    if (rc == 0) continue;
     poll_fd_cnum = poll_fd_num;
 
     // First, check for accept
-    if (poll_fds[0].revents & POLLIN) {
-      for (int i = 1; i < poll_fd_max; i++) {
-        if (poll_fds[i].fd >= 0) continue;
-        poll_fds[i].fd = accept(listen_fd, NULL, NULL);
-        if (poll_fds[i].fd < 0) {
-          if (errno != EWOULDBLOCK) {
-            perror("accept failed");
-            exit(-1);
-          }
-          break;
-          // EWOULDBLOCK means we connected to all pending accept.
-        }
-        printf("accepting conn %d in thread %d\n", i, thread_id);
-        rc = fcntl(poll_fds[i].fd, F_GETFL, 0);
-        fcntl(poll_fds[i].fd, F_SETFL, rc | O_NONBLOCK);
-        rc = fcntl(poll_fds[i].fd, F_GETFL, 0);
-        if (!(rc & O_NONBLOCK)) {
-          fprintf(stderr, "setting nonblock client fd failed\n");
-          exit(-1);
-        }
-        poll_fds[i].events = POLLIN;
-        printf("new conn %d estabilshed in thread %d\n", i, thread_id);
-        if (i >= poll_fd_num)
-          poll_fd_num = i + 1;
+    if (clientfds[0].revents & POLLIN) {
+      syslog(LOG_DEBUG, "accepting fd in thread %d", tp->thread_id);
+      rc = read(clientfds[0].fd, fdbuf, sizeof(fdbuf));
+      fdbuf_num = rc / sizeof(int);
+      int j = 1;
+      for (int i = 0; i < fdbuf_num; i++) {
+        while (j < poll_fd_max && clientfds[j].fd >= 0) j++;
+        // TODO j might overflow
+        clientfds[j].fd = fdbuf[i];
+        clientfds[j].events = POLLIN;
+        if (j >= poll_fd_num)
+          poll_fd_num = j + 1;
       }
-      // print running out of poll_fds
     }
 
     // Read/Write from rest of fds
     for (int i = 1; i < poll_fd_cnum; i++)
       {
-        if (poll_fds[i].fd < 0) continue;
-        if (!(poll_fds[i].revents & POLLIN)) continue;
-        rc = recv(poll_fds[i].fd, buffer, sizeof(buffer), 0);
+        if (clientfds[i].fd < 0) continue;
+        if (!(clientfds[i].revents & POLLIN)) continue;
+        rc = recv(clientfds[i].fd, buffer, sizeof(buffer), 0);
         if (rc <= 0) {
           // We only read once per poll per fd, so we should not see
           // EWOULDBLOCK here.
           // This load balances each handle, but performance may suffer from
           // poll implementation. More poll system calls in this case.
-          close(poll_fds[i].fd);
-          poll_fds[i].fd = -1;
-          printf("connection fd %d closed in thread %d\n", i, thread_id);
+          close(clientfds[i].fd);
+          clientfds[i].fd = -1;
+          syslog(LOG_DEBUG, "connection fd %d closed in thread %d", i, tp->thread_id);
           if (i == poll_fd_num - 1) {
             for (int j = i; j > 0; j--) {
-              if (poll_fds[i].fd >= 0) {
+              if (clientfds[j].fd >= 0) {
                 poll_fd_num = j + 1;
                 break;
               }
@@ -140,6 +98,10 @@ void* ev_loop(void* context) {
 int main(int argc, char** argv)
 {
   int c, num_threads = 1;
+  struct sockaddr_in addr;
+  const int on = 1;
+  int listen_fd, rc, round_robin = 0;
+  struct pollfd listen_poll[1];
 
   while ((c = getopt(argc, argv, "t:p:")) != -1)
     {
@@ -154,17 +116,89 @@ int main(int argc, char** argv)
           port_num = atoi(optarg);
           break;
         default:
-          printf("Usage: %s -t thread_num\n", argv[0]);
+          printf("Usage: %s -t thread_num -p port\n", argv[0]);
           exit(-1);
         }
     }
+  openlog("edamame", LOG_PERROR, LOG_USER);
 
   pthread_t threads[num_threads];
-  for (size_t i = 0; i < num_threads; i++)
-    pthread_create(&threads[i], NULL, ev_loop, (void*)i);
-
-  // TODO where do I handle signals?
+  struct thread_pipe tpipes[num_threads];
+  int fdbuf[num_threads][256];
+  int fdbuf_cnt[num_threads];
   for (int i = 0; i < num_threads; i++)
-    pthread_join(threads[i], NULL);
-  return 0;
+    {
+      tpipes[i].thread_id = i;
+      pipe(tpipes[i].pipefd);
+      pthread_create(&threads[i], NULL, ev_loop, &tpipes[i]);
+    }
+
+  addr = (struct sockaddr_in) {
+    .sin_family = AF_INET,
+    .sin_port = htons(port_num),
+    .sin_addr.s_addr = htonl(INADDR_ANY),
+  };
+  if ((listen_fd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
+    syslog(LOG_ERR, "Create ipv4 tcp socket failed: %s", strerror(errno));
+    exit(-1);
+  }
+  if (setsockopt(listen_fd, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on))) {
+    syslog(LOG_ERR,"Set socket opt SO_REUSEADDR failed: %s", strerror(errno));
+    exit(-1);
+  }
+  rc = fcntl(listen_fd, F_GETFL, 0);
+  fcntl(listen_fd, F_SETFL, rc | O_NONBLOCK);
+  rc = fcntl(listen_fd, F_GETFL, 0);
+  if (!(rc & O_NONBLOCK)) {
+    syslog(LOG_ERR,"Unable to set nonblocking socket");
+    exit(-1);
+  }
+  if (bind(listen_fd, (struct sockaddr*)&addr, sizeof(addr))) {
+    syslog(LOG_ERR,"Bind failed: %s", strerror(errno));
+    exit(-1);
+  }
+  if (listen(listen_fd, SOMAXCONN)) {
+    syslog(LOG_ERR,"listen failed: %s", strerror(errno));
+    exit(-1);
+  }
+  listen_poll[0].fd = listen_fd;
+  listen_poll[0].events = POLLIN;
+
+  while (1)
+    {
+      rc = poll(listen_poll, 1, POLL_TIMEOUT);
+      if (rc < 0) {
+        perror("poll err");
+        exit(-1);
+      }
+      if (rc == 0) continue;
+
+      // get as much accept as possible
+      for (int i = 0; i < num_threads; i++)
+        fdbuf_cnt[i] = 0;
+      while (1)
+        {
+          int clientfd = accept(listen_poll[0].fd, NULL, NULL);
+          if (clientfd < 0) {
+            if (errno != EWOULDBLOCK) {
+              syslog(LOG_ERR, "Accept failed: %s", strerror(errno));
+            }
+            // flush clientfds to client threads
+            for (int i = 0; i < num_threads; i++)
+              {
+                if (fdbuf_cnt[i] == 0)
+                  continue;
+                syslog(LOG_DEBUG, "Forward fd to thread %d", i);
+                write(tpipes[i].pipefd[1], &fdbuf[i][0],
+                      sizeof(int) * fdbuf_cnt[i]);
+              }
+            break;
+          }
+          fdbuf[round_robin][fdbuf_cnt[round_robin]] = clientfd;
+          fdbuf_cnt[round_robin]++;
+          if (++round_robin >= num_threads)
+            round_robin = 0;
+        }
+    }
+
 }

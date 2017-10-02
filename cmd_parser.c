@@ -1,6 +1,8 @@
 #include "cmd_parser.h"
 #include "util.h"
 #include <ctype.h>
+#include <errno.h>
+#include <string.h>
 
 static char CMD_STR_SET[4] = "set ";
 static char CMD_STR_ADD[4] = "add ";
@@ -27,10 +29,10 @@ ssize_t cmd_parse_get(cmd_handler* cmd, ssize_t nbyte, char* buf);
 
 extern void process_cmd_get(cmd_handler* cmd);
 
-ssize_t binary_cpbuf(cmd_handler* cmd, ssize_t nbyte, char* buf)
-ssize_t binary_cmd_parse_extra(cmd_handler* cmd, ssize_t nbyte, char* buf)
-ssize_t binary_cmd_parse_key(cmd_handler* cmd, ssize_t nbyte, char* buf)
-ssize_t binary_cmd_parse_value(cmd_handler* cmd, ssize_t nbyte, char* buf)
+ssize_t binary_cpbuf(cmd_handler* cmd, ssize_t nbyte, char* buf);
+ssize_t binary_cmd_parse_extra(cmd_handler* cmd, ssize_t nbyte, char* buf);
+ssize_t binary_cmd_parse_key(cmd_handler* cmd, ssize_t nbyte, char* buf);
+ssize_t binary_cmd_parse_value(cmd_handler* cmd, ssize_t nbyte, char* buf);
 
 
 // need a ascii flush error handler

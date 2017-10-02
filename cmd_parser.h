@@ -1,6 +1,8 @@
 #ifndef EDAMAME_PARSER_H_
 #define EDAMAME_PARSER_H_ 1
 
+#include <unistd.h>
+#include <stddef.h>
 #include <stdbool.h>
 #include "cmd_protocol.h"
 
