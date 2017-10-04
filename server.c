@@ -28,7 +28,6 @@ void* ev_loop(void* context) {
   struct thread_pipe* tp = (struct thread_pipe*)context;
   int fdbuf[256];
   int rc, poll_fd_num, poll_fd_cnum, fdbuf_num;
-  struct sockaddr_in addr;
   struct pollfd clientfds[poll_fd_max];
   char buffer[BUF_SIZE];
 
