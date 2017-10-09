@@ -15,4 +15,14 @@ cmd_parser_test_SOURCES = \
 cmd_parser_test_CFLAGS = @cmocka_CFLAGS@
 cmd_parser_test_LDADD = @cmocka_LIBS@
 
-edamamecached_SOURCES = server.c
+edamamecached_SOURCES = \
+  server.c \
+  cmd_protocol.c \
+  cmd_protocol.h \
+  cmd_parser.c \
+  cmd_parser.h \
+  writer.c \
+  writer.h \
+  cmd_reader.c \
+  cmd_reader.h
+

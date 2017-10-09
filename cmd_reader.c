@@ -1,80 +1,62 @@
-#include <uv.h>
 #include <ctype.h>
 #include "cmd_parser.h"
-#include "util.h"
+#include "writer.h"
 
-void edamame_server_close(uv_handle_t*);
+char* ascii_ok = "ASCII OK\r\n";
+char* binary_ok = "BINARY OK\r\n";
 
-void edamame_client_close(uv_handle_t* client);
-void edamame_client_shutdown(uv_shutdown_t*, int);
-
-void edamame_client_read(uv_stream_t* client, ssize_t nbyte, const uv_buf_t* buf)
+void edamame_read(cmd_handler* cmd, int nbyte, char* data, ed_writer* writer)
 {
-  cmd_handler* cmd = (cmd_handler*)client;
-  ssize_t idx = 0;
-  uv_shutdown_t *shutdown_req;
-
-  if (nbyte == -1)
-    {
-      reset_cmd_handler(cmd);
-      // TODO faster malloc for small obj
-      free(buf->base);
-      shutdown_req = malloc(sizeof(uv_shutdown_t));
-      uv_shutdown(shutdown_req, client, edamame_client_shutdown);
-      return;
-    }
-
-  if (nbyte == 0)
-    {
-      // TODO faster malloc for small obj
-      free(buf->base);
-      return;
-    }
+  int idx = 0;
 
   while (idx < nbyte)
     {
       switch (cmd->state)
         {
         case CMD_CLEAN:
+          // TODO Check first byte for binary or ascii.
         case ASCII_PENDING_RAWBUF:
-          idx += ascii_cpbuf(cmd, nbyte - idx, &buf->base[idx]);
+          idx += ascii_cpbuf(cmd, nbyte - idx, &data[idx]);
           break;
         case ASCII_PENDING_PARSE_CMD:
           ascii_parse_cmd(cmd);
           break;
         case ASCII_PENDING_GET_MULTI:
-          idx += cmd_parse_get(cmd, nbyte - idx, &buf->base[idx]);
+        case ASCII_PENDING_GET_CAS_MULTI:
+          idx += cmd_parse_get(cmd, nbyte - idx, &data[idx]);
           break;
         case ASCII_PENDING_VALUE:
-          idx += cmd_parse_ascii_value(cmd, nbyte - idx, &buf->base[idx]);
+          idx += cmd_parse_ascii_value(cmd, nbyte - idx, &data[idx]);
           break;
         case ASCII_CMD_READY:
           // TODO process ascii cmd
-          printf("ascii cmd parsed\n");
+          writer_reserve(writer, sizeof(ascii_ok) - 1);
+          writer_append(writer, ascii_ok, sizeof(ascii_ok) - 1);
+          reset_cmd_handler(cmd);
           break;
         case ASCII_ERROR:
-          idx += ascii_cmd_error(cmd, nbyte - idx, &buf->base[idx]);
+          idx += ascii_cmd_error(cmd, nbyte - idx, &data[idx]);
           break;
         case BINARY_PENDING_RAWBUF:
-          idx += binary_cpbuf(cmd, nbyte - idx, &buf->base[idx]);
+          idx += binary_cpbuf(cmd, nbyte - idx, &data[idx]);
           break;
         case BINARY_PENDING_PARSE_EXTRA:
-          idx += binary_cmd_parse_extra(cmd, nbyte - idx, &buf->base[idx]);
+          idx += binary_cmd_parse_extra(cmd, nbyte - idx, &data[idx]);
         case BINARY_PENDING_PARSE_KEY:
-          idx += binary_cmd_parse_key(cmd, nbyte - idx, &buf->base[idx]);
+          idx += binary_cmd_parse_key(cmd, nbyte - idx, &data[idx]);
           break;
         case BINARY_PENDING_VALUE:
-          idx += binary_cmd_parse_value(cmd, nbyte - idx, &buf->base[idx]);
+          idx += binary_cmd_parse_value(cmd, nbyte - idx, &data[idx]);
           break;
         case BINARY_CMD_READY:
-          printf("binary cmd parsed\n");
+          writer_reserve(writer, sizeof(binary_ok) - 1);
+          writer_append(writer, binary_ok, sizeof(binary_ok) - 1);
+          reset_cmd_handler(cmd);
         }
     }
-  free(buf->base);
 }
 
-void cmd_process_ascii_ready(cmd_handler* cmd)
+void process_cmd_get(cmd_handler* cmd)
 {
-  // in testing we simply reset the cmd
-  reset_cmd_handler(cmd);
+  // do nothing for now
 }

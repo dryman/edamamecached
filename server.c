@@ -12,8 +12,12 @@
 #include <syslog.h>
 #include <string.h>
 
+#include "cmd_parser.h"
+#include "cmd_reader.h"
+#include "writer.h"
+
 static int port_num = 7500;
-// max value: 32767
+// TODO different system has different max value.
 static int poll_fd_max = 256;
 
 struct thread_pipe {
@@ -28,7 +32,9 @@ void* ev_loop(void* context) {
   struct thread_pipe* tp = (struct thread_pipe*)context;
   int fdbuf[256];
   int rc, poll_fd_num, poll_fd_cnum, fdbuf_num;
-  struct pollfd clientfds[poll_fd_max];
+  struct pollfd* clientfds = calloc(sizeof(struct pollfd), poll_fd_max);
+  cmd_handler* cmds = calloc(sizeof(cmd_handler), poll_fd_max);
+  ed_writer* writers = calloc(sizeof(ed_writer), poll_fd_max);
   char buffer[BUF_SIZE];
 
   clientfds[0].fd = tp->pipefd[0];
@@ -60,6 +66,8 @@ void* ev_loop(void* context) {
         // TODO j might overflow
         clientfds[j].fd = fdbuf[i];
         clientfds[j].events = POLLIN;
+        reset_cmd_handler(&cmds[j]);
+        writer_init(&writers[j], WRITER_DEFAULT_SIZE);
         if (j >= poll_fd_num)
           poll_fd_num = j + 1;
       }
@@ -88,7 +96,9 @@ void* ev_loop(void* context) {
             }
           }
         }
-        // TODO handle read data.
+        edamame_read(&cmds[i], rc, buffer, &writers[i]);
+        // TODO setup POLLOUT when we enter blocking mode
+        writer_flush(&writers[i], clientfds[i].fd);
       }
   }
   return NULL;

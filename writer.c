@@ -1,8 +1,9 @@
-#include <stdio.h>
+#include <unistd.h>
+#include <string.h>
+#include <stdlib.h>
+#include <errno.h>
 
-#define WRITER_DEFAULT_SIZE 65536
-
-typedef struct ed_buffer ed_buffer;
+#include "writer.h"
 
 struct ed_buffer
 {
@@ -13,25 +14,32 @@ struct ed_buffer
   ed_buffer* next;
 };
 
-struct ed_writer
-{
-  ed_buffer* head;
-  ed_buffer* end;
-};
-
 void buffer_init(ed_buffer* buffer, size_t size)
 {
-  buf->buffer = malloc(size);
-  buf->size = size;
-  buf->sent_idx = buf->filled_idx = 0;
-  buf->next = NULL;
+  buffer->buffer = malloc(size);
+  buffer->size = size;
+  buffer->sent_idx = buffer->filled_idx = 0;
+  buffer->next = NULL;
 }
 
-void writer_init(ed_writer* writer)
+void writer_init(ed_writer* writer, size_t size)
 {
-  ed_buffer* buffer = malloc(sizeof(ed_buffer));
-  buffer_init(buffer, WRITER_DEFAULT_SIZE);
-  writer->head = writer->end = buf;
+  if (!writer->head)
+    {
+      ed_buffer* buffer = malloc(sizeof(ed_buffer));
+      buffer_init(buffer, size);
+      writer->head = writer->end = buffer;
+      writer->writer_default_size = size;
+      return;
+    }
+  for (ed_buffer* iter = writer->head; iter != writer->end;)
+    {
+      ed_buffer* tmp = iter;
+      iter = iter->next;
+      free(tmp);
+    }
+  writer->head->sent_idx = 0;
+  writer->head->filled_idx = 0;
 }
 
 bool writer_reserve(ed_writer* writer, size_t nbyte)
@@ -40,8 +48,8 @@ bool writer_reserve(ed_writer* writer, size_t nbyte)
   if (nbyte > buffer->size - buffer->filled_idx)
     {
       ed_buffer* new_buffer = malloc(sizeof(ed_buffer));
-      size_t buf_size = nbyte > WRITER_DEFAULT_SIZE ? nbyte :
-       WRITER_DEFAULT_SIZE;
+      size_t buf_size = nbyte > writer->writer_default_size ? nbyte :
+       writer->writer_default_size;
       buffer_init(new_buffer, buf_size);
       buffer->next = new_buffer;
       writer->end = new_buffer;
@@ -77,6 +85,7 @@ bool writer_flush(ed_writer* writer, int fd)
         ed_buffer* tmp = *iter;
         *iter = (*iter)->next;
         free(tmp);
+        continue;
       }
       written = write(fd, &(*iter)->buffer[(*iter)->sent_idx],
                       (*iter)->filled_idx - (*iter)->sent_idx);
@@ -84,6 +93,7 @@ bool writer_flush(ed_writer* writer, int fd)
         {
           if (errno != EWOULDBLOCK)
             return false;
+          // TODO need to register poll
           return true;
         }
       (*iter)->sent_idx += written;
