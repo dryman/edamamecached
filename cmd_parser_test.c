@@ -1,3 +1,4 @@
+#include <stdio.h>
 #include <stdarg.h>
 #include <stddef.h>
 #include <setjmp.h>
@@ -7,17 +8,6 @@
 #include <cmocka.h>
 #include "cmd_parser.h"
 #include "util.h"
-
-extern void reset_cmd_handler(cmd_handler* cmd);
-extern ssize_t ascii_cmd_error(cmd_handler* cmd, ssize_t nread, char* buf);
-extern ssize_t ascii_cpbuf(cmd_handler* cmd, ssize_t nread, char* buf);
-extern bool parse_uint32(uint32_t* dest, char** iter);
-extern bool parse_uint64(uint64_t* dest, char** iter);
-extern void ascii_parse_cmd(cmd_handler* cmd);
-extern ssize_t cmd_parse_ascii_value(cmd_handler* cmd, ssize_t nread, char* buf);
-extern void cmd_process_ascii_ready(cmd_handler* cmd);
-extern ssize_t cmd_parse_get(cmd_handler* cmd, ssize_t nread, char* buf);
-
 
 static void
 test_parse_uint(void** context)
@@ -57,17 +47,17 @@ test_parse_ascii_value(void** context)
   cmd_handler cmd = {};
   cmd.req.bodylen = 5;
   cmd.state = ASCII_PENDING_VALUE;
-  assert_int_equal(2, cmd_parse_ascii_value(&cmd, 2, buf1));
+  assert_int_equal(2, cmd_parse_ascii_value(&cmd, 2, buf1, NULL));
   assert_int_equal(2, cmd.value_stored);
   assert_true(cmd.val_copied);
   assert_int_equal(ASCII_PENDING_VALUE, cmd.state);
-  assert_int_equal(4, cmd_parse_ascii_value(&cmd, 8, &buf1[2]));
+  assert_int_equal(4, cmd_parse_ascii_value(&cmd, 8, &buf1[2], NULL));
   assert_int_equal(ASCII_CMD_READY, cmd.state);
 
   reset_cmd_handler(&cmd);
   cmd.req.bodylen = 5;
   cmd.state = ASCII_PENDING_VALUE;
-  assert_int_equal(6, cmd_parse_ascii_value(&cmd, 10, buf1));
+  assert_int_equal(6, cmd_parse_ascii_value(&cmd, 10, buf1, NULL));
   assert_int_equal(5, cmd.value_stored);
   assert_false(cmd.val_copied);
   assert_int_equal(ASCII_CMD_READY, cmd.state);
@@ -75,23 +65,23 @@ test_parse_ascii_value(void** context)
   reset_cmd_handler(&cmd);
   cmd.req.bodylen = 5;
   cmd.state = ASCII_PENDING_VALUE;
-  assert_int_equal(2, cmd_parse_ascii_value(&cmd, 2, buf2));
+  assert_int_equal(2, cmd_parse_ascii_value(&cmd, 2, buf2, NULL));
   assert_int_equal(2, cmd.value_stored);
   assert_true(cmd.val_copied);
   assert_int_equal(ASCII_PENDING_VALUE, cmd.state);
-  assert_int_equal(4, cmd_parse_ascii_value(&cmd, 8, &buf2[2]));
+  assert_int_equal(4, cmd_parse_ascii_value(&cmd, 8, &buf2[2], NULL));
   assert_int_equal(ASCII_ERROR, cmd.state);
 
   reset_cmd_handler(&cmd);
   cmd.req.bodylen = 5;
   cmd.state = ASCII_PENDING_VALUE;
-  assert_int_equal(6, cmd_parse_ascii_value(&cmd, 10, buf2));
+  assert_int_equal(6, cmd_parse_ascii_value(&cmd, 10, buf2, NULL));
   assert_int_equal(ASCII_ERROR, cmd.state);
 
   reset_cmd_handler(&cmd);
   cmd.req.bodylen = 0;
   cmd.state = ASCII_PENDING_VALUE;
-  assert_int_equal(1, cmd_parse_ascii_value(&cmd, 5, buf3));
+  assert_int_equal(1, cmd_parse_ascii_value(&cmd, 5, buf3, NULL));
   assert_int_equal(ASCII_CMD_READY, cmd.state);
 }
 
@@ -108,17 +98,17 @@ test_ascii_cpbuf(void** context)
   char buf6[] = "\r\n gets 8yyy";
 
   // test parse stream in two pass
-  assert_int_equal(2, ascii_cpbuf(&cmd, 2, buf1));
+  assert_int_equal(2, ascii_cpbuf(&cmd, 2, buf1, NULL));
   assert_int_equal(2, cmd.buf_used);
   assert_int_equal(ASCII_PENDING_RAWBUF, cmd.state);
-  assert_int_equal(5, ascii_cpbuf(&cmd, 8, &buf1[2]));
+  assert_int_equal(5, ascii_cpbuf(&cmd, 8, &buf1[2], NULL));
   assert_int_equal(7, cmd.buf_used);
   assert_memory_equal(cmd.buffer, buf1, 7);
   assert_int_equal(ASCII_PENDING_PARSE_CMD, cmd.state);
 
   // test parse stream in one pass
   reset_cmd_handler(&cmd);
-  assert_int_equal(7, ascii_cpbuf(&cmd, 10, buf1));
+  assert_int_equal(7, ascii_cpbuf(&cmd, 10, buf1, NULL));
   assert_int_equal(7, cmd.buf_used);
   assert_memory_equal(cmd.buffer, buf1, 7);
   assert_int_equal(ASCII_PENDING_PARSE_CMD, cmd.state);
@@ -127,11 +117,11 @@ test_ascii_cpbuf(void** context)
   // we need to wait second pass because we can't include
   // \n in value if the following state requires value.
   reset_cmd_handler(&cmd);
-  assert_int_equal(6, ascii_cpbuf(&cmd, 6, buf1));
+  assert_int_equal(6, ascii_cpbuf(&cmd, 6, buf1, NULL));
   assert_int_equal(6, cmd.buf_used);
   assert_true(cmd.has_pending_newline);
   assert_int_equal(ASCII_PENDING_RAWBUF, cmd.state);
-  assert_int_equal(1, ascii_cpbuf(&cmd, 4, &buf1[6]));
+  assert_int_equal(1, ascii_cpbuf(&cmd, 4, &buf1[6], NULL));
   assert_false(cmd.has_pending_newline);
   assert_int_equal(7, cmd.buf_used);
   assert_memory_equal(cmd.buffer, buf1, 7);
@@ -139,48 +129,48 @@ test_ascii_cpbuf(void** context)
 
   // test parse stream with space chars on front
   reset_cmd_handler(&cmd);
-  assert_int_equal(4, ascii_cpbuf(&cmd, 4, buf2));
+  assert_int_equal(4, ascii_cpbuf(&cmd, 4, buf2, NULL));
   assert_int_equal(1, cmd.buf_used);
   assert_int_equal(ASCII_PENDING_RAWBUF, cmd.state);
-  assert_int_equal(4, ascii_cpbuf(&cmd, 6, &buf2[4]));
+  assert_int_equal(4, ascii_cpbuf(&cmd, 6, &buf2[4], NULL));
   assert_int_equal(5, cmd.buf_used);
   assert_memory_equal(cmd.buffer, &buf2[3], 5);
   assert_int_equal(ASCII_PENDING_PARSE_CMD, cmd.state);
 
   // test parsing stream with invalid char
   reset_cmd_handler(&cmd);
-  assert_int_equal(2, ascii_cpbuf(&cmd, 20, buf3));
+  assert_int_equal(2, ascii_cpbuf(&cmd, 20, buf3, NULL));
   assert_int_equal(ASCII_ERROR, cmd.state);
   reset_cmd_handler(&cmd);
-  assert_int_equal(2, ascii_cpbuf(&cmd, 15, &buf3[5]));
+  assert_int_equal(2, ascii_cpbuf(&cmd, 15, &buf3[5], NULL));
   assert_int_equal(ASCII_ERROR, cmd.state);
   reset_cmd_handler(&cmd);
-  assert_int_equal(2, ascii_cpbuf(&cmd, 10, &buf3[10]));
+  assert_int_equal(2, ascii_cpbuf(&cmd, 10, &buf3[10], NULL));
   assert_int_equal(ASCII_ERROR, cmd.state);
   reset_cmd_handler(&cmd);
-  assert_int_equal(2, ascii_cpbuf(&cmd, 5, &buf3[15]));
+  assert_int_equal(2, ascii_cpbuf(&cmd, 5, &buf3[15], NULL));
   assert_int_equal(ASCII_ERROR, cmd.state);
 
   // test parsing stream having \r but no \n
   reset_cmd_handler(&cmd);
-  assert_int_equal(7, ascii_cpbuf(&cmd, 10, buf4));
+  assert_int_equal(7, ascii_cpbuf(&cmd, 10, buf4, NULL));
   assert_int_equal(ASCII_ERROR, cmd.state);
 
   // test parsing stream having \r but no \n, split on \r
   reset_cmd_handler(&cmd);
-  assert_int_equal(6, ascii_cpbuf(&cmd, 6, buf4));
+  assert_int_equal(6, ascii_cpbuf(&cmd, 6, buf4, NULL));
   assert_int_equal(6, cmd.buf_used);
   assert_true(cmd.has_pending_newline);
   assert_int_equal(ASCII_PENDING_RAWBUF, cmd.state);
-  assert_int_equal(1, ascii_cpbuf(&cmd, 4, &buf4[6]));
+  assert_int_equal(1, ascii_cpbuf(&cmd, 4, &buf4[6], NULL));
   assert_int_equal(ASCII_ERROR, cmd.state);
 
   reset_cmd_handler(&cmd);
-  assert_int_equal(7, ascii_cpbuf(&cmd, 10, buf5));
+  assert_int_equal(7, ascii_cpbuf(&cmd, 10, buf5, NULL));
   assert_int_equal(ASCII_PENDING_GET_MULTI, cmd.state);
 
   reset_cmd_handler(&cmd);
-  assert_int_equal(8, ascii_cpbuf(&cmd, 10, buf6));
+  assert_int_equal(8, ascii_cpbuf(&cmd, 10, buf6, NULL));
   assert_int_equal(ASCII_PENDING_GET_CAS_MULTI, cmd.state);
 }
 
@@ -200,7 +190,7 @@ test_ascii_parse_cmd_set(void** context)
   // regular set
   strcpy(cmd.buffer, set_cmd1);
   cmd.buf_used = sizeof(set_cmd1) - 1;
-  ascii_parse_cmd(&cmd);
+  ascii_parse_cmd(&cmd, NULL);
   assert_int_equal(PROTOCOL_BINARY_CMD_SET, cmd.req.op);
   assert_int_equal(5, cmd.req.keylen);
   assert_memory_equal(key, cmd.key, 5);
@@ -213,7 +203,7 @@ test_ascii_parse_cmd_set(void** context)
   reset_cmd_handler(&cmd);
   strcpy(cmd.buffer, set_cmd2);
   cmd.buf_used = sizeof(set_cmd2) - 1;
-  ascii_parse_cmd(&cmd);
+  ascii_parse_cmd(&cmd, NULL);
   assert_int_equal(PROTOCOL_BINARY_CMD_SETQ, cmd.req.op);
   assert_int_equal(5, cmd.req.keylen);
   assert_memory_equal(key, cmd.key, 5);
@@ -226,7 +216,7 @@ test_ascii_parse_cmd_set(void** context)
   reset_cmd_handler(&cmd);
   strcpy(cmd.buffer, set_cmd3);
   cmd.buf_used = sizeof(set_cmd3) - 1;
-  ascii_parse_cmd(&cmd);
+  ascii_parse_cmd(&cmd, NULL);
   assert_int_equal(PROTOCOL_BINARY_CMD_SET, cmd.req.op);
   assert_int_equal(1, cmd.req.keylen);
   assert_memory_equal("0", cmd.key, 1);
@@ -239,25 +229,25 @@ test_ascii_parse_cmd_set(void** context)
   reset_cmd_handler(&cmd);
   strcpy(cmd.buffer, set_cmd4);
   cmd.buf_used = sizeof(set_cmd4) - 1;
-  ascii_parse_cmd(&cmd);
+  ascii_parse_cmd(&cmd, NULL);
   assert_int_equal(ASCII_ERROR, cmd.state);
 
   reset_cmd_handler(&cmd);
   strcpy(cmd.buffer, set_cmd5);
   cmd.buf_used = sizeof(set_cmd5) - 1;
-  ascii_parse_cmd(&cmd);
+  ascii_parse_cmd(&cmd, NULL);
   assert_int_equal(ASCII_ERROR, cmd.state);
 
   reset_cmd_handler(&cmd);
   strcpy(cmd.buffer, set_cmd6);
   cmd.buf_used = sizeof(set_cmd6) - 1;
-  ascii_parse_cmd(&cmd);
+  ascii_parse_cmd(&cmd, NULL);
   assert_int_equal(ASCII_ERROR, cmd.state);
 
   reset_cmd_handler(&cmd);
   strcpy(cmd.buffer, set_cmd7);
   cmd.buf_used = sizeof(set_cmd7) - 1;
-  ascii_parse_cmd(&cmd);
+  ascii_parse_cmd(&cmd, NULL);
   assert_int_equal(ASCII_ERROR, cmd.state);
 }
 
@@ -277,7 +267,7 @@ test_ascii_parse_cmd_add(void** context)
   // regular add
   strcpy(cmd.buffer, add_cmd1);
   cmd.buf_used = sizeof(add_cmd1) - 1;
-  ascii_parse_cmd(&cmd);
+  ascii_parse_cmd(&cmd, NULL);
   assert_int_equal(PROTOCOL_BINARY_CMD_ADD, cmd.req.op);
   assert_int_equal(5, cmd.req.keylen);
   assert_memory_equal(key, cmd.key, 5);
@@ -290,7 +280,7 @@ test_ascii_parse_cmd_add(void** context)
   reset_cmd_handler(&cmd);
   strcpy(cmd.buffer, add_cmd2);
   cmd.buf_used = sizeof(add_cmd2) - 1;
-  ascii_parse_cmd(&cmd);
+  ascii_parse_cmd(&cmd, NULL);
   assert_int_equal(PROTOCOL_BINARY_CMD_ADDQ, cmd.req.op);
   assert_int_equal(5, cmd.req.keylen);
   assert_memory_equal(key, cmd.key, 5);
@@ -303,7 +293,7 @@ test_ascii_parse_cmd_add(void** context)
   reset_cmd_handler(&cmd);
   strcpy(cmd.buffer, add_cmd3);
   cmd.buf_used = sizeof(add_cmd3) - 1;
-  ascii_parse_cmd(&cmd);
+  ascii_parse_cmd(&cmd, NULL);
   assert_int_equal(PROTOCOL_BINARY_CMD_ADD, cmd.req.op);
   assert_int_equal(1, cmd.req.keylen);
   assert_memory_equal("0", cmd.key, 1);
@@ -316,25 +306,25 @@ test_ascii_parse_cmd_add(void** context)
   reset_cmd_handler(&cmd);
   strcpy(cmd.buffer, add_cmd4);
   cmd.buf_used = sizeof(add_cmd4) - 1;
-  ascii_parse_cmd(&cmd);
+  ascii_parse_cmd(&cmd, NULL);
   assert_int_equal(ASCII_ERROR, cmd.state);
 
   reset_cmd_handler(&cmd);
   strcpy(cmd.buffer, add_cmd5);
   cmd.buf_used = sizeof(add_cmd5) - 1;
-  ascii_parse_cmd(&cmd);
+  ascii_parse_cmd(&cmd, NULL);
   assert_int_equal(ASCII_ERROR, cmd.state);
 
   reset_cmd_handler(&cmd);
   strcpy(cmd.buffer, add_cmd6);
   cmd.buf_used = sizeof(add_cmd6) - 1;
-  ascii_parse_cmd(&cmd);
+  ascii_parse_cmd(&cmd, NULL);
   assert_int_equal(ASCII_ERROR, cmd.state);
 
   reset_cmd_handler(&cmd);
   strcpy(cmd.buffer, add_cmd7);
   cmd.buf_used = sizeof(add_cmd7) - 1;
-  ascii_parse_cmd(&cmd);
+  ascii_parse_cmd(&cmd, NULL);
   assert_int_equal(ASCII_ERROR, cmd.state);
 }
 
@@ -354,7 +344,7 @@ test_ascii_parse_cmd_replace(void** context)
   // regular replace
   strcpy(cmd.buffer, replace_cmd1);
   cmd.buf_used = sizeof(replace_cmd1) - 1;
-  ascii_parse_cmd(&cmd);
+  ascii_parse_cmd(&cmd, NULL);
   assert_int_equal(PROTOCOL_BINARY_CMD_REPLACE, cmd.req.op);
   assert_int_equal(5, cmd.req.keylen);
   assert_memory_equal(key, cmd.key, 5);
@@ -367,7 +357,7 @@ test_ascii_parse_cmd_replace(void** context)
   reset_cmd_handler(&cmd);
   strcpy(cmd.buffer, replace_cmd2);
   cmd.buf_used = sizeof(replace_cmd2) - 1;
-  ascii_parse_cmd(&cmd);
+  ascii_parse_cmd(&cmd, NULL);
   assert_int_equal(PROTOCOL_BINARY_CMD_REPLACEQ, cmd.req.op);
   assert_int_equal(5, cmd.req.keylen);
   assert_memory_equal(key, cmd.key, 5);
@@ -380,7 +370,7 @@ test_ascii_parse_cmd_replace(void** context)
   reset_cmd_handler(&cmd);
   strcpy(cmd.buffer, replace_cmd3);
   cmd.buf_used = sizeof(replace_cmd3) - 1;
-  ascii_parse_cmd(&cmd);
+  ascii_parse_cmd(&cmd, NULL);
   assert_int_equal(PROTOCOL_BINARY_CMD_REPLACE, cmd.req.op);
   assert_int_equal(1, cmd.req.keylen);
   assert_memory_equal("0", cmd.key, 1);
@@ -393,25 +383,25 @@ test_ascii_parse_cmd_replace(void** context)
   reset_cmd_handler(&cmd);
   strcpy(cmd.buffer, replace_cmd4);
   cmd.buf_used = sizeof(replace_cmd4) - 1;
-  ascii_parse_cmd(&cmd);
+  ascii_parse_cmd(&cmd, NULL);
   assert_int_equal(ASCII_ERROR, cmd.state);
 
   reset_cmd_handler(&cmd);
   strcpy(cmd.buffer, replace_cmd5);
   cmd.buf_used = sizeof(replace_cmd5) - 1;
-  ascii_parse_cmd(&cmd);
+  ascii_parse_cmd(&cmd, NULL);
   assert_int_equal(ASCII_ERROR, cmd.state);
 
   reset_cmd_handler(&cmd);
   strcpy(cmd.buffer, replace_cmd6);
   cmd.buf_used = sizeof(replace_cmd6) - 1;
-  ascii_parse_cmd(&cmd);
+  ascii_parse_cmd(&cmd, NULL);
   assert_int_equal(ASCII_ERROR, cmd.state);
 
   reset_cmd_handler(&cmd);
   strcpy(cmd.buffer, replace_cmd7);
   cmd.buf_used = sizeof(replace_cmd7) - 1;
-  ascii_parse_cmd(&cmd);
+  ascii_parse_cmd(&cmd, NULL);
   assert_int_equal(ASCII_ERROR, cmd.state);
 }
 
@@ -431,7 +421,7 @@ test_ascii_parse_cmd_append(void** context)
   // regular append
   strcpy(cmd.buffer, append_cmd1);
   cmd.buf_used = sizeof(append_cmd1) - 1;
-  ascii_parse_cmd(&cmd);
+  ascii_parse_cmd(&cmd, NULL);
   assert_int_equal(PROTOCOL_BINARY_CMD_APPEND, cmd.req.op);
   assert_int_equal(5, cmd.req.keylen);
   assert_memory_equal(key, cmd.key, 5);
@@ -444,7 +434,7 @@ test_ascii_parse_cmd_append(void** context)
   reset_cmd_handler(&cmd);
   strcpy(cmd.buffer, append_cmd2);
   cmd.buf_used = sizeof(append_cmd2) - 1;
-  ascii_parse_cmd(&cmd);
+  ascii_parse_cmd(&cmd, NULL);
   assert_int_equal(PROTOCOL_BINARY_CMD_APPENDQ, cmd.req.op);
   assert_int_equal(5, cmd.req.keylen);
   assert_memory_equal(key, cmd.key, 5);
@@ -457,7 +447,7 @@ test_ascii_parse_cmd_append(void** context)
   reset_cmd_handler(&cmd);
   strcpy(cmd.buffer, append_cmd3);
   cmd.buf_used = sizeof(append_cmd3) - 1;
-  ascii_parse_cmd(&cmd);
+  ascii_parse_cmd(&cmd, NULL);
   assert_int_equal(PROTOCOL_BINARY_CMD_APPEND, cmd.req.op);
   assert_int_equal(1, cmd.req.keylen);
   assert_memory_equal("0", cmd.key, 1);
@@ -470,25 +460,25 @@ test_ascii_parse_cmd_append(void** context)
   reset_cmd_handler(&cmd);
   strcpy(cmd.buffer, append_cmd4);
   cmd.buf_used = sizeof(append_cmd4) - 1;
-  ascii_parse_cmd(&cmd);
+  ascii_parse_cmd(&cmd, NULL);
   assert_int_equal(ASCII_ERROR, cmd.state);
 
   reset_cmd_handler(&cmd);
   strcpy(cmd.buffer, append_cmd5);
   cmd.buf_used = sizeof(append_cmd5) - 1;
-  ascii_parse_cmd(&cmd);
+  ascii_parse_cmd(&cmd, NULL);
   assert_int_equal(ASCII_ERROR, cmd.state);
 
   reset_cmd_handler(&cmd);
   strcpy(cmd.buffer, append_cmd6);
   cmd.buf_used = sizeof(append_cmd6) - 1;
-  ascii_parse_cmd(&cmd);
+  ascii_parse_cmd(&cmd, NULL);
   assert_int_equal(ASCII_ERROR, cmd.state);
 
   reset_cmd_handler(&cmd);
   strcpy(cmd.buffer, append_cmd7);
   cmd.buf_used = sizeof(append_cmd7) - 1;
-  ascii_parse_cmd(&cmd);
+  ascii_parse_cmd(&cmd, NULL);
   assert_int_equal(ASCII_ERROR, cmd.state);
 }
 
@@ -508,7 +498,7 @@ test_ascii_parse_cmd_prepend(void** context)
   // regular prepend
   strcpy(cmd.buffer, prepend_cmd1);
   cmd.buf_used = sizeof(prepend_cmd1) - 1;
-  ascii_parse_cmd(&cmd);
+  ascii_parse_cmd(&cmd, NULL);
   assert_int_equal(PROTOCOL_BINARY_CMD_PREPEND, cmd.req.op);
   assert_int_equal(5, cmd.req.keylen);
   assert_memory_equal(key, cmd.key, 5);
@@ -521,7 +511,7 @@ test_ascii_parse_cmd_prepend(void** context)
   reset_cmd_handler(&cmd);
   strcpy(cmd.buffer, prepend_cmd2);
   cmd.buf_used = sizeof(prepend_cmd2) - 1;
-  ascii_parse_cmd(&cmd);
+  ascii_parse_cmd(&cmd, NULL);
   assert_int_equal(PROTOCOL_BINARY_CMD_PREPENDQ, cmd.req.op);
   assert_int_equal(5, cmd.req.keylen);
   assert_memory_equal(key, cmd.key, 5);
@@ -534,7 +524,7 @@ test_ascii_parse_cmd_prepend(void** context)
   reset_cmd_handler(&cmd);
   strcpy(cmd.buffer, prepend_cmd3);
   cmd.buf_used = sizeof(prepend_cmd3) - 1;
-  ascii_parse_cmd(&cmd);
+  ascii_parse_cmd(&cmd, NULL);
   assert_int_equal(PROTOCOL_BINARY_CMD_PREPEND, cmd.req.op);
   assert_int_equal(1, cmd.req.keylen);
   assert_memory_equal("0", cmd.key, 1);
@@ -547,25 +537,25 @@ test_ascii_parse_cmd_prepend(void** context)
   reset_cmd_handler(&cmd);
   strcpy(cmd.buffer, prepend_cmd4);
   cmd.buf_used = sizeof(prepend_cmd4) - 1;
-  ascii_parse_cmd(&cmd);
+  ascii_parse_cmd(&cmd, NULL);
   assert_int_equal(ASCII_ERROR, cmd.state);
 
   reset_cmd_handler(&cmd);
   strcpy(cmd.buffer, prepend_cmd5);
   cmd.buf_used = sizeof(prepend_cmd5) - 1;
-  ascii_parse_cmd(&cmd);
+  ascii_parse_cmd(&cmd, NULL);
   assert_int_equal(ASCII_ERROR, cmd.state);
 
   reset_cmd_handler(&cmd);
   strcpy(cmd.buffer, prepend_cmd6);
   cmd.buf_used = sizeof(prepend_cmd6) - 1;
-  ascii_parse_cmd(&cmd);
+  ascii_parse_cmd(&cmd, NULL);
   assert_int_equal(ASCII_ERROR, cmd.state);
 
   reset_cmd_handler(&cmd);
   strcpy(cmd.buffer, prepend_cmd7);
   cmd.buf_used = sizeof(prepend_cmd7) - 1;
-  ascii_parse_cmd(&cmd);
+  ascii_parse_cmd(&cmd, NULL);
   assert_int_equal(ASCII_ERROR, cmd.state);
 }
 
@@ -585,7 +575,7 @@ test_ascii_parse_cmd_cas(void** context)
   // regular cas
   strcpy(cmd.buffer, cas_cmd1);
   cmd.buf_used = sizeof(cas_cmd1) - 1;
-  ascii_parse_cmd(&cmd);
+  ascii_parse_cmd(&cmd, NULL);
   assert_int_equal(PROTOCOL_BINARY_CMD_SET, cmd.req.op);
   assert_int_equal(5, cmd.req.keylen);
   assert_memory_equal(key, cmd.key, 5);
@@ -599,7 +589,7 @@ test_ascii_parse_cmd_cas(void** context)
   reset_cmd_handler(&cmd);
   strcpy(cmd.buffer, cas_cmd2);
   cmd.buf_used = sizeof(cas_cmd2) - 1;
-  ascii_parse_cmd(&cmd);
+  ascii_parse_cmd(&cmd, NULL);
   assert_int_equal(PROTOCOL_BINARY_CMD_SETQ, cmd.req.op);
   assert_int_equal(5, cmd.req.keylen);
   assert_memory_equal(key, cmd.key, 5);
@@ -613,7 +603,7 @@ test_ascii_parse_cmd_cas(void** context)
   reset_cmd_handler(&cmd);
   strcpy(cmd.buffer, cas_cmd3);
   cmd.buf_used = sizeof(cas_cmd3) - 1;
-  ascii_parse_cmd(&cmd);
+  ascii_parse_cmd(&cmd, NULL);
   assert_int_equal(PROTOCOL_BINARY_CMD_SET, cmd.req.op);
   assert_int_equal(1, cmd.req.keylen);
   assert_memory_equal("0", cmd.key, 1);
@@ -627,25 +617,25 @@ test_ascii_parse_cmd_cas(void** context)
   reset_cmd_handler(&cmd);
   strcpy(cmd.buffer, cas_cmd4);
   cmd.buf_used = sizeof(cas_cmd4) - 1;
-  ascii_parse_cmd(&cmd);
+  ascii_parse_cmd(&cmd, NULL);
   assert_int_equal(ASCII_ERROR, cmd.state);
 
   reset_cmd_handler(&cmd);
   strcpy(cmd.buffer, cas_cmd5);
   cmd.buf_used = sizeof(cas_cmd5) - 1;
-  ascii_parse_cmd(&cmd);
+  ascii_parse_cmd(&cmd, NULL);
   assert_int_equal(ASCII_ERROR, cmd.state);
 
   reset_cmd_handler(&cmd);
   strcpy(cmd.buffer, cas_cmd6);
   cmd.buf_used = sizeof(cas_cmd6) - 1;
-  ascii_parse_cmd(&cmd);
+  ascii_parse_cmd(&cmd, NULL);
   assert_int_equal(ASCII_ERROR, cmd.state);
 
   reset_cmd_handler(&cmd);
   strcpy(cmd.buffer, cas_cmd7);
   cmd.buf_used = sizeof(cas_cmd7) - 1;
-  ascii_parse_cmd(&cmd);
+  ascii_parse_cmd(&cmd, NULL);
   assert_int_equal(ASCII_ERROR, cmd.state);
 }
 
@@ -663,7 +653,7 @@ test_ascii_parse_cmd_delete(void** context)
   // regular delete
   strcpy(cmd.buffer, delete_cmd1);
   cmd.buf_used = sizeof(delete_cmd1) - 1;
-  ascii_parse_cmd(&cmd);
+  ascii_parse_cmd(&cmd, NULL);
   assert_int_equal(PROTOCOL_BINARY_CMD_DELETE, cmd.req.op);
   assert_int_equal(5, cmd.req.keylen);
   assert_memory_equal(key, cmd.key, 5);
@@ -672,7 +662,7 @@ test_ascii_parse_cmd_delete(void** context)
   reset_cmd_handler(&cmd);
   strcpy(cmd.buffer, delete_cmd2);
   cmd.buf_used = sizeof(delete_cmd2) - 1;
-  ascii_parse_cmd(&cmd);
+  ascii_parse_cmd(&cmd, NULL);
   assert_int_equal(PROTOCOL_BINARY_CMD_DELETEQ, cmd.req.op);
   assert_int_equal(5, cmd.req.keylen);
   assert_memory_equal(key, cmd.key, 5);
@@ -682,7 +672,7 @@ test_ascii_parse_cmd_delete(void** context)
   reset_cmd_handler(&cmd);
   strcpy(cmd.buffer, delete_cmd3);
   cmd.buf_used = sizeof(delete_cmd3) - 1;
-  ascii_parse_cmd(&cmd);
+  ascii_parse_cmd(&cmd, NULL);
   assert_int_equal(PROTOCOL_BINARY_CMD_DELETE, cmd.req.op);
   assert_int_equal(1, cmd.req.keylen);
   assert_memory_equal("0", cmd.key, 1);
@@ -690,13 +680,13 @@ test_ascii_parse_cmd_delete(void** context)
   reset_cmd_handler(&cmd);
   strcpy(cmd.buffer, delete_cmd4);
   cmd.buf_used = sizeof(delete_cmd4) - 1;
-  ascii_parse_cmd(&cmd);
+  ascii_parse_cmd(&cmd, NULL);
   assert_int_equal(ASCII_ERROR, cmd.state);
 
   reset_cmd_handler(&cmd);
   strcpy(cmd.buffer, delete_cmd5);
   cmd.buf_used = sizeof(delete_cmd5) - 1;
-  ascii_parse_cmd(&cmd);
+  ascii_parse_cmd(&cmd, NULL);
   assert_int_equal(ASCII_ERROR, cmd.state);
 }
 
@@ -716,7 +706,7 @@ test_ascii_parse_cmd_incr(void** context)
   // regular incr
   strcpy(cmd.buffer, incr_cmd1);
   cmd.buf_used = sizeof(incr_cmd1) - 1;
-  ascii_parse_cmd(&cmd);
+  ascii_parse_cmd(&cmd, NULL);
   assert_int_equal(PROTOCOL_BINARY_CMD_INCREMENT, cmd.req.op);
   assert_int_equal(5, cmd.req.keylen);
   assert_memory_equal(key, cmd.key, 5);
@@ -727,7 +717,7 @@ test_ascii_parse_cmd_incr(void** context)
   reset_cmd_handler(&cmd);
   strcpy(cmd.buffer, incr_cmd2);
   cmd.buf_used = sizeof(incr_cmd2) - 1;
-  ascii_parse_cmd(&cmd);
+  ascii_parse_cmd(&cmd, NULL);
   assert_int_equal(PROTOCOL_BINARY_CMD_INCREMENTQ, cmd.req.op);
   assert_int_equal(5, cmd.req.keylen);
   assert_memory_equal(key, cmd.key, 5);
@@ -738,7 +728,7 @@ test_ascii_parse_cmd_incr(void** context)
   reset_cmd_handler(&cmd);
   strcpy(cmd.buffer, incr_cmd3);
   cmd.buf_used = sizeof(incr_cmd3) - 1;
-  ascii_parse_cmd(&cmd);
+  ascii_parse_cmd(&cmd, NULL);
   assert_int_equal(PROTOCOL_BINARY_CMD_INCREMENT, cmd.req.op);
   assert_int_equal(1, cmd.req.keylen);
   assert_memory_equal("0", cmd.key, 1);
@@ -749,25 +739,25 @@ test_ascii_parse_cmd_incr(void** context)
   reset_cmd_handler(&cmd);
   strcpy(cmd.buffer, incr_cmd4);
   cmd.buf_used = sizeof(incr_cmd4) - 1;
-  ascii_parse_cmd(&cmd);
+  ascii_parse_cmd(&cmd, NULL);
   assert_int_equal(ASCII_ERROR, cmd.state);
 
   reset_cmd_handler(&cmd);
   strcpy(cmd.buffer, incr_cmd5);
   cmd.buf_used = sizeof(incr_cmd5) - 1;
-  ascii_parse_cmd(&cmd);
+  ascii_parse_cmd(&cmd, NULL);
   assert_int_equal(ASCII_ERROR, cmd.state);
 
   reset_cmd_handler(&cmd);
   strcpy(cmd.buffer, incr_cmd6);
   cmd.buf_used = sizeof(incr_cmd6) - 1;
-  ascii_parse_cmd(&cmd);
+  ascii_parse_cmd(&cmd, NULL);
   assert_int_equal(ASCII_ERROR, cmd.state);
 
   reset_cmd_handler(&cmd);
   strcpy(cmd.buffer, incr_cmd7);
   cmd.buf_used = sizeof(incr_cmd7) - 1;
-  ascii_parse_cmd(&cmd);
+  ascii_parse_cmd(&cmd, NULL);
   assert_int_equal(ASCII_ERROR, cmd.state);
 }
 
@@ -787,7 +777,7 @@ test_ascii_parse_cmd_decr(void** context)
   // regular decr
   strcpy(cmd.buffer, decr_cmd1);
   cmd.buf_used = sizeof(decr_cmd1) - 1;
-  ascii_parse_cmd(&cmd);
+  ascii_parse_cmd(&cmd, NULL);
   assert_int_equal(PROTOCOL_BINARY_CMD_DECREMENT, cmd.req.op);
   assert_int_equal(5, cmd.req.keylen);
   assert_memory_equal(key, cmd.key, 5);
@@ -798,7 +788,7 @@ test_ascii_parse_cmd_decr(void** context)
   reset_cmd_handler(&cmd);
   strcpy(cmd.buffer, decr_cmd2);
   cmd.buf_used = sizeof(decr_cmd2) - 1;
-  ascii_parse_cmd(&cmd);
+  ascii_parse_cmd(&cmd, NULL);
   assert_int_equal(PROTOCOL_BINARY_CMD_DECREMENTQ, cmd.req.op);
   assert_int_equal(5, cmd.req.keylen);
   assert_memory_equal(key, cmd.key, 5);
@@ -809,7 +799,7 @@ test_ascii_parse_cmd_decr(void** context)
   reset_cmd_handler(&cmd);
   strcpy(cmd.buffer, decr_cmd3);
   cmd.buf_used = sizeof(decr_cmd3) - 1;
-  ascii_parse_cmd(&cmd);
+  ascii_parse_cmd(&cmd, NULL);
   assert_int_equal(PROTOCOL_BINARY_CMD_DECREMENT, cmd.req.op);
   assert_int_equal(1, cmd.req.keylen);
   assert_memory_equal("0", cmd.key, 1);
@@ -820,25 +810,25 @@ test_ascii_parse_cmd_decr(void** context)
   reset_cmd_handler(&cmd);
   strcpy(cmd.buffer, decr_cmd4);
   cmd.buf_used = sizeof(decr_cmd4) - 1;
-  ascii_parse_cmd(&cmd);
+  ascii_parse_cmd(&cmd, NULL);
   assert_int_equal(ASCII_ERROR, cmd.state);
 
   reset_cmd_handler(&cmd);
   strcpy(cmd.buffer, decr_cmd5);
   cmd.buf_used = sizeof(decr_cmd5) - 1;
-  ascii_parse_cmd(&cmd);
+  ascii_parse_cmd(&cmd, NULL);
   assert_int_equal(ASCII_ERROR, cmd.state);
 
   reset_cmd_handler(&cmd);
   strcpy(cmd.buffer, decr_cmd6);
   cmd.buf_used = sizeof(decr_cmd6) - 1;
-  ascii_parse_cmd(&cmd);
+  ascii_parse_cmd(&cmd, NULL);
   assert_int_equal(ASCII_ERROR, cmd.state);
 
   reset_cmd_handler(&cmd);
   strcpy(cmd.buffer, decr_cmd7);
   cmd.buf_used = sizeof(decr_cmd7) - 1;
-  ascii_parse_cmd(&cmd);
+  ascii_parse_cmd(&cmd, NULL);
   assert_int_equal(ASCII_ERROR, cmd.state);
 }
 
@@ -858,7 +848,7 @@ test_ascii_parse_cmd_touch(void** context)
   // regular touch
   strcpy(cmd.buffer, touch_cmd1);
   cmd.buf_used = sizeof(touch_cmd1) - 1;
-  ascii_parse_cmd(&cmd);
+  ascii_parse_cmd(&cmd, NULL);
   assert_int_equal(PROTOCOL_BINARY_CMD_TOUCH, cmd.req.op);
   assert_int_equal(5, cmd.req.keylen);
   assert_memory_equal(key, cmd.key, 5);
@@ -869,7 +859,7 @@ test_ascii_parse_cmd_touch(void** context)
   reset_cmd_handler(&cmd);
   strcpy(cmd.buffer, touch_cmd2);
   cmd.buf_used = sizeof(touch_cmd2) - 1;
-  ascii_parse_cmd(&cmd);
+  ascii_parse_cmd(&cmd, NULL);
   assert_int_equal(PROTOCOL_BINARY_CMD_TOUCHQ, cmd.req.op);
   assert_int_equal(5, cmd.req.keylen);
   assert_memory_equal(key, cmd.key, 5);
@@ -880,7 +870,7 @@ test_ascii_parse_cmd_touch(void** context)
   reset_cmd_handler(&cmd);
   strcpy(cmd.buffer, touch_cmd3);
   cmd.buf_used = sizeof(touch_cmd3) - 1;
-  ascii_parse_cmd(&cmd);
+  ascii_parse_cmd(&cmd, NULL);
   assert_int_equal(PROTOCOL_BINARY_CMD_TOUCH, cmd.req.op);
   assert_int_equal(1, cmd.req.keylen);
   assert_memory_equal("0", cmd.key, 1);
@@ -891,33 +881,38 @@ test_ascii_parse_cmd_touch(void** context)
   reset_cmd_handler(&cmd);
   strcpy(cmd.buffer, touch_cmd4);
   cmd.buf_used = sizeof(touch_cmd4) - 1;
-  ascii_parse_cmd(&cmd);
+  ascii_parse_cmd(&cmd, NULL);
   assert_int_equal(ASCII_ERROR, cmd.state);
 
   reset_cmd_handler(&cmd);
   strcpy(cmd.buffer, touch_cmd5);
   cmd.buf_used = sizeof(touch_cmd5) - 1;
-  ascii_parse_cmd(&cmd);
+  ascii_parse_cmd(&cmd, NULL);
   assert_int_equal(ASCII_ERROR, cmd.state);
 
   reset_cmd_handler(&cmd);
   strcpy(cmd.buffer, touch_cmd6);
   cmd.buf_used = sizeof(touch_cmd6) - 1;
-  ascii_parse_cmd(&cmd);
+  ascii_parse_cmd(&cmd, NULL);
   assert_int_equal(ASCII_ERROR, cmd.state);
 
   reset_cmd_handler(&cmd);
   strcpy(cmd.buffer, touch_cmd7);
   cmd.buf_used = sizeof(touch_cmd7) - 1;
-  ascii_parse_cmd(&cmd);
+  ascii_parse_cmd(&cmd, NULL);
   assert_int_equal(ASCII_ERROR, cmd.state);
 }
 
-void process_cmd_get(cmd_handler* cmd)
+void process_cmd_get(cmd_handler* cmd, ed_writer* writer)
 {
   // do nothing for now
   printf("process_cmd_get called\n");
 }
+
+void writer_init(ed_writer* writer, size_t size) {}
+bool writer_reserve(ed_writer* writer, size_t nbyte) {}
+bool writer_append(ed_writer* writer, const void* buf, size_t nbyte) {}
+bool writer_flush(ed_writer* writer, int fd) {}
 
 static void
 test_cmd_parse_get(void** context)
@@ -925,23 +920,23 @@ test_cmd_parse_get(void** context)
   char buf1[] = "012 456 890\r\n";
   cmd_handler cmd = {};
   cmd.state = ASCII_PENDING_GET_MULTI;
-  assert_int_equal(3, cmd_parse_get(&cmd, 4, buf1));
+  assert_int_equal(3, cmd_parse_get(&cmd, 4, buf1, NULL));
   assert_int_equal(ASCII_PENDING_GET_MULTI, cmd.state);
   assert_ptr_equal(&buf1[0], cmd.key);
   assert_int_equal(3, cmd.req.keylen);
 
-  assert_int_equal(3, cmd_parse_get(&cmd, 3, &buf1[3]));
+  assert_int_equal(3, cmd_parse_get(&cmd, 3, &buf1[3], NULL));
   assert_int_equal(2, cmd.buf_used);
   assert_memory_equal(cmd.buffer, &buf1[4], 2);
   assert_int_equal(ASCII_PENDING_GET_MULTI, cmd.state);
 
-  assert_int_equal(1, cmd_parse_get(&cmd, 7, &buf1[6]));
+  assert_int_equal(1, cmd_parse_get(&cmd, 7, &buf1[6], NULL));
   assert_int_equal(3, cmd.req.keylen);
   assert_memory_equal(&buf1[4], cmd.key, 3);
   assert_int_equal(0, cmd.buf_used);
   assert_int_equal(ASCII_PENDING_GET_MULTI, cmd.state);
 
-  assert_int_equal(5, cmd_parse_get(&cmd, 6, &buf1[7]));
+  assert_int_equal(5, cmd_parse_get(&cmd, 6, &buf1[7], NULL));
   assert_ptr_equal(&buf1[8], cmd.key);
   assert_int_equal(3, cmd.req.keylen);
   assert_int_equal(CMD_CLEAN, cmd.state);
