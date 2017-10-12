@@ -12,8 +12,7 @@ void edamame_read(cmd_handler* cmd, int nbyte, char* data, ed_writer* writer)
 {
   int idx = 0;
 
-  while (idx < nbyte ||
-         (cmd->state != CMD_CLEAN && cmd->state != ASCII_ERROR))
+  while (idx < nbyte || cmd->state != CMD_CLEAN)
     {
       switch (cmd->state)
         {
@@ -47,9 +46,6 @@ void edamame_read(cmd_handler* cmd, int nbyte, char* data, ed_writer* writer)
           writer_reserve(writer, sizeof(ascii_ok) - 1);
           writer_append(writer, ascii_ok, sizeof(ascii_ok) - 1);
           reset_cmd_handler(cmd);
-          break;
-        case ASCII_ERROR:
-          idx += ascii_cmd_error(cmd, nbyte - idx, &data[idx]);
           break;
         case BINARY_PENDING_RAWBUF:
           idx += binary_cpbuf(cmd, nbyte - idx, &data[idx], writer);

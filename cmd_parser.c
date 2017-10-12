@@ -19,6 +19,10 @@ static char CMD_STR_DECR[5] = "decr ";
 static char CMD_STR_TOUCH[6] = "touch ";
 static char CMD_STR_NOREPLY[7] = "noreply";
 
+static char BAD_DATA_ERROR[] = "CLIENT_ERROR bad data chunk\r\n";
+static char BAD_CMD_ERROR[] = "CLIENT_ERROR bad command line format\r\n";
+static char LINE_TOO_LONG_ERROR[] = "ERROR line too long\r\n";
+
 bool parse_uint32(uint32_t* dest, char** iter)
 {
   const char* buf;
@@ -59,7 +63,6 @@ void reset_cmd_handler(cmd_handler* cmd)
   syslog(LOG_DEBUG, "reset cmd");
   cmd->state = CMD_CLEAN;
   cmd->buf_used = 0;
-  cmd->has_pending_newline = false;
   cmd->skip_until_newline = false;
   memset(&cmd->req, 0x00, sizeof(cmd_req_header));
   memset(&cmd->extra, 0x00, sizeof(cmd_extra));
@@ -91,14 +94,13 @@ ssize_t ascii_cmd_error(cmd_handler* cmd, ssize_t nbyte, char* buf)
 ssize_t ascii_cpbuf(cmd_handler* cmd, ssize_t nbyte, char* buf, ed_writer* writer)
 {
   ssize_t idx = 0, linebreak;
+  // TODO check this logic
   if (cmd->skip_until_newline)
     {
-      while (idx < nbyte && buf[idx] != '\r') idx++;
+      while (idx < nbyte && buf[idx] != '\n') idx++;
       if (idx == nbyte) return idx;
       reset_cmd_handler(cmd);
-      // There might be an additional '\n'
-      if (idx < nbyte - 1 && buf[idx + 1] == '\n') return idx + 1;
-      return idx;
+      return idx + 1;
     }
   if (cmd->state == CMD_CLEAN)
     {
@@ -120,59 +122,31 @@ ssize_t ascii_cpbuf(cmd_handler* cmd, ssize_t nbyte, char* buf, ed_writer* write
     {
       linebreak = 0;
     }
-  if (cmd->has_pending_newline)
-    {
-      if (buf[0] == '\n')
-        {
-          cmd->state = ASCII_PENDING_PARSE_CMD;
-          cmd->buffer[cmd->buf_used] = '\n';
-          cmd->buf_used++;
-          cmd->has_pending_newline = false;
-        }
-      else
-        {
-          cmd->state = ASCII_ERROR;
-        }
-      return 1;
-    }
-  while (linebreak < nbyte && isprint(buf[linebreak]))
+  while (linebreak < nbyte && buf[linebreak] != '\n')
     linebreak++;
   if (linebreak == nbyte)
     {
       if (linebreak - idx - cmd->buf_used >= CMD_BUF_SIZE)
         {
-          // TODO emit error line too long
-          cmd->state = ASCII_ERROR;
+          writer_reserve(writer, sizeof(LINE_TOO_LONG_ERROR) - 1);
+          writer_append(writer, LINE_TOO_LONG_ERROR,
+                        sizeof(LINE_TOO_LONG_ERROR) - 1);
+          cmd->skip_until_newline = true;
           return linebreak;
         }
+      // In the middle of reading input. Store the input in buf and
+      // wait for the next read.
       cmd->state = ASCII_PENDING_RAWBUF;
-      cmd->has_pending_newline = false;
       memcpy(&cmd->buffer[cmd->buf_used], &buf[idx], linebreak - idx);
       cmd->buf_used += linebreak - idx;
       return linebreak;
     }
-  if (buf[linebreak] != '\r')
-    {
-      cmd->state = ASCII_ERROR;
-      return linebreak;
-    }
-  if (linebreak == nbyte - 1)
-    {
-      cmd->state = ASCII_PENDING_RAWBUF;
-      cmd->has_pending_newline = true;
-      memcpy(&cmd->buffer[cmd->buf_used], &buf[idx], linebreak - idx + 1);
-      cmd->buf_used += linebreak - idx + 1;
-      return linebreak + 1;
-    }
-  if (buf[linebreak+1] != '\n')
-    {
-      cmd->state = ASCII_ERROR;
-      return linebreak + 2;
-    }
+  // Normally we should check if buf[linebreak - 1] is '\r'.
+  // However, memcached doesn't check it here, so we follow the behavior.
   cmd->state = ASCII_PENDING_PARSE_CMD;
-  memcpy(&cmd->buffer[cmd->buf_used], &buf[idx], linebreak - idx + 2);
-  cmd->buf_used += linebreak - idx + 2;
-  return linebreak + 2;
+  memcpy(&cmd->buffer[cmd->buf_used], &buf[idx], linebreak - idx + 1);
+  cmd->buf_used += linebreak - idx + 1;
+  return linebreak + 1;
 }
 
 
@@ -193,17 +167,23 @@ void ascii_parse_cmd(cmd_handler* cmd, ed_writer* writer)
       iter1 = iter2;
       if (!parse_uint32(&cmd->extra.twoval.flags, &iter1))
         {
-          cmd->state = ASCII_ERROR;
+          writer_reserve(writer, sizeof(BAD_CMD_ERROR) - 1);
+          writer_append(writer, BAD_CMD_ERROR, sizeof(BAD_CMD_ERROR) - 1);
+          reset_cmd_handler(cmd);
           return;
         }
       if (!parse_uint32(&cmd->extra.twoval.expiration, &iter1))
         {
-          cmd->state = ASCII_ERROR;
+          writer_reserve(writer, sizeof(BAD_CMD_ERROR) - 1);
+          writer_append(writer, BAD_CMD_ERROR, sizeof(BAD_CMD_ERROR) - 1);
+          reset_cmd_handler(cmd);
           return;
         }
       if (!parse_uint32(&cmd->req.bodylen, &iter1))
         {
-          cmd->state = ASCII_ERROR;
+          writer_reserve(writer, sizeof(BAD_CMD_ERROR) - 1);
+          writer_append(writer, BAD_CMD_ERROR, sizeof(BAD_CMD_ERROR) - 1);
+          reset_cmd_handler(cmd);
           return;
         }
       while (*iter1 == ' ') iter1++;
@@ -213,9 +193,11 @@ void ascii_parse_cmd(cmd_handler* cmd, ed_writer* writer)
           iter1 += sizeof(CMD_STR_NOREPLY);
           while (*iter1 == ' ') iter1++;
         }
-      if (*iter1 != '\r')
+      if (*iter1 != '\r' && *iter1 != '\n')
         {
-          cmd->state = ASCII_ERROR;
+          writer_reserve(writer, sizeof(BAD_CMD_ERROR) - 1);
+          writer_append(writer, BAD_CMD_ERROR, sizeof(BAD_CMD_ERROR) - 1);
+          reset_cmd_handler(cmd);
           return;
         }
       cmd->state = ASCII_PENDING_VALUE;
@@ -233,17 +215,23 @@ void ascii_parse_cmd(cmd_handler* cmd, ed_writer* writer)
       iter1 = iter2;
       if (!parse_uint32(&cmd->extra.twoval.flags, &iter1))
         {
-          cmd->state = ASCII_ERROR;
+          writer_reserve(writer, sizeof(BAD_CMD_ERROR) - 1);
+          writer_append(writer, BAD_CMD_ERROR, sizeof(BAD_CMD_ERROR) - 1);
+          reset_cmd_handler(cmd);
           return;
         }
       if (!parse_uint32(&cmd->extra.twoval.expiration, &iter1))
         {
-          cmd->state = ASCII_ERROR;
+          writer_reserve(writer, sizeof(BAD_CMD_ERROR) - 1);
+          writer_append(writer, BAD_CMD_ERROR, sizeof(BAD_CMD_ERROR) - 1);
+          reset_cmd_handler(cmd);
           return;
         }
       if (!parse_uint32(&cmd->req.bodylen, &iter1))
         {
-          cmd->state = ASCII_ERROR;
+          writer_reserve(writer, sizeof(BAD_CMD_ERROR) - 1);
+          writer_append(writer, BAD_CMD_ERROR, sizeof(BAD_CMD_ERROR) - 1);
+          reset_cmd_handler(cmd);
           return;
         }
       while (*iter1 == ' ') iter1++;
@@ -253,9 +241,11 @@ void ascii_parse_cmd(cmd_handler* cmd, ed_writer* writer)
           iter1 += sizeof(CMD_STR_NOREPLY);
           while (*iter1 == ' ') iter1++;
         }
-      if (*iter1 != '\r')
+      if (*iter1 != '\r' && *iter1 != '\n')
         {
-          cmd->state = ASCII_ERROR;
+          writer_reserve(writer, sizeof(BAD_CMD_ERROR) - 1);
+          writer_append(writer, BAD_CMD_ERROR, sizeof(BAD_CMD_ERROR) - 1);
+          reset_cmd_handler(cmd);
           return;
         }
       cmd->state = ASCII_PENDING_VALUE;
@@ -273,17 +263,23 @@ void ascii_parse_cmd(cmd_handler* cmd, ed_writer* writer)
       iter1 = iter2;
       if (!parse_uint32(&cmd->extra.twoval.flags, &iter1))
         {
-          cmd->state = ASCII_ERROR;
+          writer_reserve(writer, sizeof(BAD_CMD_ERROR) - 1);
+          writer_append(writer, BAD_CMD_ERROR, sizeof(BAD_CMD_ERROR) - 1);
+          reset_cmd_handler(cmd);
           return;
         }
       if (!parse_uint32(&cmd->extra.twoval.expiration, &iter1))
         {
-          cmd->state = ASCII_ERROR;
+          writer_reserve(writer, sizeof(BAD_CMD_ERROR) - 1);
+          writer_append(writer, BAD_CMD_ERROR, sizeof(BAD_CMD_ERROR) - 1);
+          reset_cmd_handler(cmd);
           return;
         }
       if (!parse_uint32(&cmd->req.bodylen, &iter1))
         {
-          cmd->state = ASCII_ERROR;
+          writer_reserve(writer, sizeof(BAD_CMD_ERROR) - 1);
+          writer_append(writer, BAD_CMD_ERROR, sizeof(BAD_CMD_ERROR) - 1);
+          reset_cmd_handler(cmd);
           return;
         }
       while (*iter1 == ' ') iter1++;
@@ -293,9 +289,11 @@ void ascii_parse_cmd(cmd_handler* cmd, ed_writer* writer)
           iter1 += sizeof(CMD_STR_NOREPLY);
           while (*iter1 == ' ') iter1++;
         }
-      if (*iter1 != '\r')
+      if (*iter1 != '\r' && *iter1 != '\n')
         {
-          cmd->state = ASCII_ERROR;
+          writer_reserve(writer, sizeof(BAD_CMD_ERROR) - 1);
+          writer_append(writer, BAD_CMD_ERROR, sizeof(BAD_CMD_ERROR) - 1);
+          reset_cmd_handler(cmd);
           return;
         }
       cmd->state = ASCII_PENDING_VALUE;
@@ -313,17 +311,23 @@ void ascii_parse_cmd(cmd_handler* cmd, ed_writer* writer)
       iter1 = iter2;
       if (!parse_uint32(&cmd->extra.twoval.flags, &iter1))
         {
-          cmd->state = ASCII_ERROR;
+          writer_reserve(writer, sizeof(BAD_CMD_ERROR) - 1);
+          writer_append(writer, BAD_CMD_ERROR, sizeof(BAD_CMD_ERROR) - 1);
+          reset_cmd_handler(cmd);
           return;
         }
       if (!parse_uint32(&cmd->extra.twoval.expiration, &iter1))
         {
-          cmd->state = ASCII_ERROR;
+          writer_reserve(writer, sizeof(BAD_CMD_ERROR) - 1);
+          writer_append(writer, BAD_CMD_ERROR, sizeof(BAD_CMD_ERROR) - 1);
+          reset_cmd_handler(cmd);
           return;
         }
       if (!parse_uint32(&cmd->req.bodylen, &iter1))
         {
-          cmd->state = ASCII_ERROR;
+          writer_reserve(writer, sizeof(BAD_CMD_ERROR) - 1);
+          writer_append(writer, BAD_CMD_ERROR, sizeof(BAD_CMD_ERROR) - 1);
+          reset_cmd_handler(cmd);
           return;
         }
       while (*iter1 == ' ') iter1++;
@@ -333,9 +337,11 @@ void ascii_parse_cmd(cmd_handler* cmd, ed_writer* writer)
           iter1 += sizeof(CMD_STR_NOREPLY);
           while (*iter1 == ' ') iter1++;
         }
-      if (*iter1 != '\r')
+      if (*iter1 != '\r' && *iter1 != '\n')
         {
-          cmd->state = ASCII_ERROR;
+          writer_reserve(writer, sizeof(BAD_CMD_ERROR) - 1);
+          writer_append(writer, BAD_CMD_ERROR, sizeof(BAD_CMD_ERROR) - 1);
+          reset_cmd_handler(cmd);
           return;
         }
       cmd->state = ASCII_PENDING_VALUE;
@@ -353,17 +359,23 @@ void ascii_parse_cmd(cmd_handler* cmd, ed_writer* writer)
       iter1 = iter2;
       if (!parse_uint32(&cmd->extra.twoval.flags, &iter1))
         {
-          cmd->state = ASCII_ERROR;
+          writer_reserve(writer, sizeof(BAD_CMD_ERROR) - 1);
+          writer_append(writer, BAD_CMD_ERROR, sizeof(BAD_CMD_ERROR) - 1);
+          reset_cmd_handler(cmd);
           return;
         }
       if (!parse_uint32(&cmd->extra.twoval.expiration, &iter1))
         {
-          cmd->state = ASCII_ERROR;
+          writer_reserve(writer, sizeof(BAD_CMD_ERROR) - 1);
+          writer_append(writer, BAD_CMD_ERROR, sizeof(BAD_CMD_ERROR) - 1);
+          reset_cmd_handler(cmd);
           return;
         }
       if (!parse_uint32(&cmd->req.bodylen, &iter1))
         {
-          cmd->state = ASCII_ERROR;
+          writer_reserve(writer, sizeof(BAD_CMD_ERROR) - 1);
+          writer_append(writer, BAD_CMD_ERROR, sizeof(BAD_CMD_ERROR) - 1);
+          reset_cmd_handler(cmd);
           return;
         }
       while (*iter1 == ' ') iter1++;
@@ -373,9 +385,11 @@ void ascii_parse_cmd(cmd_handler* cmd, ed_writer* writer)
           iter1 += sizeof(CMD_STR_NOREPLY);
           while (*iter1 == ' ') iter1++;
         }
-      if (*iter1 != '\r')
+      if (*iter1 != '\r' && *iter1 != '\n')
         {
-          cmd->state = ASCII_ERROR;
+          writer_reserve(writer, sizeof(BAD_CMD_ERROR) - 1);
+          writer_append(writer, BAD_CMD_ERROR, sizeof(BAD_CMD_ERROR) - 1);
+          reset_cmd_handler(cmd);
           return;
         }
       cmd->state = ASCII_PENDING_VALUE;
@@ -394,22 +408,30 @@ void ascii_parse_cmd(cmd_handler* cmd, ed_writer* writer)
       iter1 = iter2;
       if (!parse_uint32(&cmd->extra.twoval.flags, &iter1))
         {
-          cmd->state = ASCII_ERROR;
+          writer_reserve(writer, sizeof(BAD_CMD_ERROR) - 1);
+          writer_append(writer, BAD_CMD_ERROR, sizeof(BAD_CMD_ERROR) - 1);
+          reset_cmd_handler(cmd);
           return;
         }
       if (!parse_uint32(&cmd->extra.twoval.expiration, &iter1))
         {
-          cmd->state = ASCII_ERROR;
+          writer_reserve(writer, sizeof(BAD_CMD_ERROR) - 1);
+          writer_append(writer, BAD_CMD_ERROR, sizeof(BAD_CMD_ERROR) - 1);
+          reset_cmd_handler(cmd);
           return;
         }
       if (!parse_uint32(&cmd->req.bodylen, &iter1))
         {
-          cmd->state = ASCII_ERROR;
+          writer_reserve(writer, sizeof(BAD_CMD_ERROR) - 1);
+          writer_append(writer, BAD_CMD_ERROR, sizeof(BAD_CMD_ERROR) - 1);
+          reset_cmd_handler(cmd);
           return;
         }
       if (!parse_uint64(&cmd->req.cas, &iter1))
         {
-          cmd->state = ASCII_ERROR;
+          writer_reserve(writer, sizeof(BAD_CMD_ERROR) - 1);
+          writer_append(writer, BAD_CMD_ERROR, sizeof(BAD_CMD_ERROR) - 1);
+          reset_cmd_handler(cmd);
           return;
         }
       while (*iter1 == ' ') iter1++;
@@ -419,9 +441,11 @@ void ascii_parse_cmd(cmd_handler* cmd, ed_writer* writer)
           iter1 += sizeof(CMD_STR_NOREPLY);
           while (*iter1 == ' ') iter1++;
         }
-      if (*iter1 != '\r')
+      if (*iter1 != '\r' && *iter1 != '\n')
         {
-          cmd->state = ASCII_ERROR;
+          writer_reserve(writer, sizeof(BAD_CMD_ERROR) - 1);
+          writer_append(writer, BAD_CMD_ERROR, sizeof(BAD_CMD_ERROR) - 1);
+          reset_cmd_handler(cmd);
           return;
         }
       cmd->state = ASCII_PENDING_VALUE;
@@ -446,7 +470,9 @@ void ascii_parse_cmd(cmd_handler* cmd, ed_writer* writer)
         }
       if (*iter1 != '\r')
         {
-          cmd->state = ASCII_ERROR;
+          writer_reserve(writer, sizeof(BAD_CMD_ERROR) - 1);
+          writer_append(writer, BAD_CMD_ERROR, sizeof(BAD_CMD_ERROR) - 1);
+          reset_cmd_handler(cmd);
           return;
         }
       cmd->state = ASCII_CMD_READY;
@@ -464,7 +490,9 @@ void ascii_parse_cmd(cmd_handler* cmd, ed_writer* writer)
       iter1 = iter2;
       if (!parse_uint64(&cmd->extra.numeric.addition_value, &iter1))
         {
-          cmd->state = ASCII_ERROR;
+          writer_reserve(writer, sizeof(BAD_CMD_ERROR) - 1);
+          writer_append(writer, BAD_CMD_ERROR, sizeof(BAD_CMD_ERROR) - 1);
+          reset_cmd_handler(cmd);
           return;
         }
       cmd->extra.numeric.init_value = 0;
@@ -476,9 +504,11 @@ void ascii_parse_cmd(cmd_handler* cmd, ed_writer* writer)
           iter1 += sizeof(CMD_STR_NOREPLY);
           while (*iter1 == ' ') iter1++;
         }
-      if (*iter1 != '\r')
+      if (*iter1 != '\r' && *iter1 != '\n')
         {
-          cmd->state = ASCII_ERROR;
+          writer_reserve(writer, sizeof(BAD_CMD_ERROR) - 1);
+          writer_append(writer, BAD_CMD_ERROR, sizeof(BAD_CMD_ERROR) - 1);
+          reset_cmd_handler(cmd);
           return;
         }
       cmd->state = ASCII_CMD_READY;
@@ -496,7 +526,9 @@ void ascii_parse_cmd(cmd_handler* cmd, ed_writer* writer)
       iter1 = iter2;
       if (!parse_uint64(&cmd->extra.numeric.addition_value, &iter1))
         {
-          cmd->state = ASCII_ERROR;
+          writer_reserve(writer, sizeof(BAD_CMD_ERROR) - 1);
+          writer_append(writer, BAD_CMD_ERROR, sizeof(BAD_CMD_ERROR) - 1);
+          reset_cmd_handler(cmd);
           return;
         }
       cmd->extra.numeric.init_value = 0;
@@ -508,9 +540,11 @@ void ascii_parse_cmd(cmd_handler* cmd, ed_writer* writer)
           iter1 += sizeof(CMD_STR_NOREPLY);
           while (*iter1 == ' ') iter1++;
         }
-      if (*iter1 != '\r')
+      if (*iter1 != '\r' && *iter1 != '\n')
         {
-          cmd->state = ASCII_ERROR;
+          writer_reserve(writer, sizeof(BAD_CMD_ERROR) - 1);
+          writer_append(writer, BAD_CMD_ERROR, sizeof(BAD_CMD_ERROR) - 1);
+          reset_cmd_handler(cmd);
           return;
         }
       cmd->state = ASCII_CMD_READY;
@@ -528,7 +562,9 @@ void ascii_parse_cmd(cmd_handler* cmd, ed_writer* writer)
       iter1 = iter2;
       if (!parse_uint32(&cmd->extra.oneval.expiration, &iter1))
         {
-          cmd->state = ASCII_ERROR;
+          writer_reserve(writer, sizeof(BAD_CMD_ERROR) - 1);
+          writer_append(writer, BAD_CMD_ERROR, sizeof(BAD_CMD_ERROR) - 1);
+          reset_cmd_handler(cmd);
           return;
         }
       while (*iter1 == ' ') iter1++;
@@ -538,35 +574,51 @@ void ascii_parse_cmd(cmd_handler* cmd, ed_writer* writer)
           iter1 += sizeof(CMD_STR_NOREPLY);
           while (*iter1 == ' ') iter1++;
         }
-      if (*iter1 != '\r')
+      if (*iter1 != '\r' && *iter1 != '\n')
         {
-          cmd->state = ASCII_ERROR;
+          writer_reserve(writer, sizeof(BAD_CMD_ERROR) - 1);
+          writer_append(writer, BAD_CMD_ERROR, sizeof(BAD_CMD_ERROR) - 1);
+          reset_cmd_handler(cmd);
           return;
         }
       cmd->state = ASCII_CMD_READY;
       return;
     }
   syslog(LOG_DEBUG, "cannot parse %s", cmd->buffer);
-  cmd->state = ASCII_ERROR;
+  writer_reserve(writer, sizeof(BAD_CMD_ERROR) - 1);
+  writer_append(writer, BAD_CMD_ERROR, sizeof(BAD_CMD_ERROR) - 1);
+  reset_cmd_handler(cmd);
 }
 
 ssize_t cmd_parse_ascii_value(cmd_handler* cmd, ssize_t nbyte, char* buf, ed_writer* writer)
 {
-  ssize_t partial_len;
-  if (cmd->value_stored == 0 && nbyte > cmd->req.bodylen + 1)
+  ssize_t partial_len, idx;
+
+  if (cmd->skip_until_newline)
     {
-      if (buf[cmd->req.bodylen] == '\r')
+      idx = 0;
+      while (idx < nbyte && buf[idx] != '\n') idx++;
+      if (idx == nbyte) return idx;
+      reset_cmd_handler(cmd);
+      return idx + 1;
+    }
+  if (cmd->value_stored == 0 && nbyte > cmd->req.bodylen + 2)
+    {
+      if (buf[cmd->req.bodylen + 1] == '\n' &&
+          buf[cmd->req.bodylen] == '\r')
         {
           cmd->value = buf;
           cmd->val_copied = false;
           cmd->value_stored = cmd->req.bodylen;
           cmd->state = ASCII_CMD_READY;
-          return cmd->req.bodylen + 1;
+          return cmd->req.bodylen + 2;
         }
       else
         {
-          cmd->state = ASCII_ERROR;
-          return cmd->req.bodylen + 1;
+          writer_reserve(writer, sizeof(BAD_DATA_ERROR) - 1);
+          writer_append(writer, BAD_DATA_ERROR, sizeof(BAD_DATA_ERROR) - 1);
+          cmd->skip_until_newline = true;
+          return cmd->req.bodylen + 2;
         }
     }
   if (cmd->req.bodylen == 0)
@@ -580,22 +632,25 @@ ssize_t cmd_parse_ascii_value(cmd_handler* cmd, ssize_t nbyte, char* buf, ed_wri
       cmd->val_copied = true;
     }
   partial_len = cmd->req.bodylen - cmd->value_stored;
-  if (nbyte <= partial_len)
+  if (nbyte < partial_len + 2)
     {
       memcpy(&cmd->value[cmd->value_stored], buf, nbyte);
       cmd->value_stored += nbyte;
       return nbyte;
     }
-  else if (buf[partial_len] == '\r')
+  else if (buf[partial_len + 1] == '\n' &&
+           buf[partial_len] == '\r')
     {
       memcpy(&cmd->value[cmd->value_stored],
              buf, partial_len);
       cmd->value_stored = cmd->req.bodylen;
       cmd->state = ASCII_CMD_READY;
-      return partial_len + 1;
+      return partial_len + 2;
     }
-  cmd->state = ASCII_ERROR;
-  return partial_len + 1;
+  writer_reserve(writer, sizeof(BAD_DATA_ERROR) - 1);
+  writer_append(writer, BAD_DATA_ERROR, sizeof(BAD_DATA_ERROR) - 1);
+  cmd->skip_until_newline = true;
+  return partial_len + 2;
 }
 
 ssize_t cmd_parse_get(cmd_handler* cmd, ssize_t nbyte, char* buf, ed_writer* writer)
@@ -605,6 +660,14 @@ ssize_t cmd_parse_get(cmd_handler* cmd, ssize_t nbyte, char* buf, ed_writer* wri
   // idx2 for scanning key
   idx1 = idx2 = 0;
 
+  if (cmd->skip_until_newline)
+    {
+      while (idx2 < nbyte && buf[idx2] != '\n') idx2++;
+      if (idx2 == nbyte) return idx2;
+      reset_cmd_handler(cmd);
+      return idx2 + 1;
+    }
+
   if (cmd->buf_used > 0)
     {
       while (idx2 < nbyte && isgraph(buf[idx2]))
@@ -613,8 +676,10 @@ ssize_t cmd_parse_get(cmd_handler* cmd, ssize_t nbyte, char* buf, ed_writer* wri
         {
           if (idx2 + cmd->buf_used >= KEY_MAX_SIZE)
             {
-              cmd->buf_used = 0;
-              cmd->state = ASCII_ERROR;
+              // TODO check case where we already processed whole buffer
+              writer_reserve(writer, sizeof(BAD_CMD_ERROR) - 1);
+              writer_append(writer, BAD_CMD_ERROR, sizeof(BAD_CMD_ERROR) - 1);
+              cmd->skip_until_newline = true;
               return idx2;
             }
           memcpy(&cmd->buffer[cmd->buf_used], buf, idx2);
@@ -635,8 +700,10 @@ ssize_t cmd_parse_get(cmd_handler* cmd, ssize_t nbyte, char* buf, ed_writer* wri
         }
       if (buf[idx2] != ' ')
         {
-          cmd->buf_used = 0;
-          cmd->state = ASCII_ERROR;
+          writer_reserve(writer, sizeof(BAD_CMD_ERROR) - 1);
+          writer_append(writer, BAD_CMD_ERROR, sizeof(BAD_CMD_ERROR) - 1);
+          // TODO while till newline
+          reset_cmd_handler(cmd);
           return idx2;
         }
       memcpy(&cmd->buffer[cmd->buf_used], buf, idx2);
@@ -663,14 +730,20 @@ ssize_t cmd_parse_get(cmd_handler* cmd, ssize_t nbyte, char* buf, ed_writer* wri
     idx2++;
   if (idx2 == idx1)
     {
-      cmd->state = ASCII_ERROR;
+      writer_reserve(writer, sizeof(BAD_CMD_ERROR) - 1);
+      writer_append(writer, BAD_CMD_ERROR, sizeof(BAD_CMD_ERROR) - 1);
+      cmd->skip_until_newline = true;
+      // TODO check case where we already processed whole buffer
       return idx2;
     }
   if (idx2 == nbyte)
     {
       if (idx2 - idx1 >= KEY_MAX_SIZE)
         {
-          cmd->state = ASCII_ERROR;
+          writer_reserve(writer, sizeof(BAD_CMD_ERROR) - 1);
+          writer_append(writer, BAD_CMD_ERROR, sizeof(BAD_CMD_ERROR) - 1);
+          cmd->skip_until_newline = true;
+          // TODO check case where we already processed whole buffer
           return idx2;
         }
       memcpy(cmd->buffer, &buf[idx1], idx2 - idx1);

@@ -37,7 +37,6 @@ enum cmd_state
   ASCII_PENDING_GET_CAS_MULTI = 4,
   ASCII_PENDING_VALUE = 5,
   ASCII_CMD_READY = 6,
-  ASCII_ERROR = 7,
   BINARY_PENDING_RAWBUF = 8,
   BINARY_PENDING_PARSE_EXTRA = 9,
   BINARY_PENDING_PARSE_KEY = 10,
@@ -50,7 +49,6 @@ struct cmd_handler
   cmd_state state;
   char buffer[CMD_BUF_SIZE];
   ssize_t buf_used;
-  bool has_pending_newline;
   bool skip_until_newline;
   cmd_extra extra;
   cmd_req_header req;
