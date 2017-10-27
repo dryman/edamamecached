@@ -77,6 +77,25 @@ enum cmd_opcode
   PROTOCOL_BINARY_CMD_TOUCHQ = 0x1f,
 } __attribute__((packed));
 
+enum cmd_errcode
+{
+  STATUS_NOERROR = 0x0000,
+  STATUS_KEY_NOT_FOUND = 0x001,
+  STATUS_KEY_EXISTS = 0x002,
+  STATUS_VAL_TOO_LARGE = 0x003,
+  STATUS_INVALID_ARG = 0x0004,
+  STATUS_ITEM_NOT_STORED = 0x0005,
+  STATUS_NON_NUMERIC = 0x0006,
+  STATUS_VBUCKET_IN_OTHER_SERV = 0x0007,
+  STATUS_AUTH_ERROR = 0x0008,
+  STATUS_AUTH_CONT = 0x0009,
+  STATUS_UNKNOWN_CMD = 0x0081,
+  STATUS_OUT_OF_MEM = 0x0082,
+  STATUS_NOT_SUPPORTED = 0x0083,
+  STATUS_INTERNAL_ERR = 0x0084,
+  STATUS_BUSY = 0x0085,
+  STATUS_TMP_FAILURE = 0x0086,
+};
 
 struct cmd_req_header
 {
@@ -121,5 +140,7 @@ union cmd_extra
     uint32_t expiration;
   } numeric;
 };
+
+void get_errstr(const char** ptr, size_t* len, enum cmd_errcode code);
 
 #endif

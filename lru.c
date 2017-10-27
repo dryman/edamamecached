@@ -1,6 +1,8 @@
 #include <urcu.h>
-#include "cmd_parser.h"
 #include <time.h>
+#include <syslog.h>
+#include "cmd_parser.h"
+#include "util.h"
 
 
 #define PROBE_STATS_SIZE 512
@@ -51,6 +53,7 @@ struct bucket
 // such as set, append, prepend, incr, decr, etc.
 struct lru_val
 {
+  enum cmd_errcode errcode;
   bool is_numeric_val;
   size_t vallen;
   void* value;
@@ -214,8 +217,7 @@ next_iter:
   return false;
 }
 
-bool lru_upsert(lru_t* lru, void* key, size_t keylen,
-                lru_val* valref, ed_writer* writer)
+bool lru_upsert(lru_t* lru, void* key, size_t keylen, lru_val_t* lru_val)
 {
   capacity = lru_capacity(lru->capacity_clz, lru->capacity_ms4b);
   mask = (1ULL << (64 - lru->capacity_clz)) - 1;
@@ -251,8 +253,8 @@ check_magic:
                 case PROTOCOL_BINARY_CMD_DECREMENT:
                 case PROTOCOL_BINARY_CMD_DECREMENTQ:
                   if (cmd->extra.numeric.init_value == UINT64_MAX) {
-                    // TODO document this weird default behavior.
-                    // TODO write key not found
+                    // TODO document UINT64_MAX behavior
+                    lru_val->errcode = STATUS_KEY_NOT_FOUND;
                     return false;
                   }
                   break;
@@ -262,18 +264,20 @@ check_magic:
                 case PROTOCOL_BINARY_CMD_APPENDQ:
                 case PROTOCOL_BINARY_CMD_PREPEND:
                 case PROTOCOL_BINARY_CMD_PREPENDQ:
+                  lru_val->errocde = STATUS_ITEM_NOT_STORED;
+                  return false;
                 case PROTOCOL_BINARY_CMD_TOUCH:
                 case PROTOCOL_BINARY_CMD_TOUCHQ:
-                  // TODO write key not found.
+                  lru_val->errcode = STATUS_KEY_NOT_FOUND;
                   return false;
                 default:
-                  // TODO unknown action
+                  lru_val->errcode = STATUS_INTERNAL_ERR;
                   return false;
               }
               new_magic = magic | 0x80;
               if (!atomic_compare_exchange_strong(&bucket->magic, &magic, new_magic))
                 goto check_magic;
-              lru_write_empty_bucket(lru, bucket, cmd)
+              lru_write_empty_bucket(lru, bucket, cmd, lru_val)
               atomic_store_explicit(&bucket->magic, 1, memory_order_release);
               return true;
             }
@@ -286,7 +290,7 @@ check_magic:
             goto next_iter;
           if (cmd->req.op == PROTOCOL_BINARY_CMD_ADD ||
               cmd->req.op == PROTOCOL_BINARY_CMD_ADDQ) {
-            // TODO add cannot work on existing key
+            lru_val->errcode = STATUS_ITEM_NOT_STORED;
             return false;
           }
           tmp_idx;
@@ -315,7 +319,7 @@ next_iter:
   return false;
 }
 
-void lru_write_empty_bucket(lru_t* lru, struct bucket* bucket, cmd_handler* cmd)
+void lru_write_empty_bucket(lru_t* lru, struct bucket* bucket, cmd_handler* cmd, lru_val_t* lru_val)
 {
   time_t now = time(NULL);
   uint64_t txid = atomic_fetch_add_explicit(&lru->txid, 1, memory_order_relaxed);
@@ -389,7 +393,7 @@ void lru_write_empty_bucket(lru_t* lru, struct bucket* bucket, cmd_handler* cmd)
   }
 }
 
-bool lru_update_bucket(lru_t* lru, struct bucket* bucket, cmd_handler* cmd)
+bool lru_update_bucket(lru_t* lru, struct bucket* bucket, cmd_handler* cmd, lru_val_t* lru_val)
 {
   time_t now = time(NULL);
   uint64_t txid;
@@ -401,12 +405,6 @@ bool lru_update_bucket(lru_t* lru, struct bucket* bucket, cmd_handler* cmd)
   inline_vallen = lru->inline_vallen;
   vallen = cmd->value_stored;
 
-  // move this to each case, because we may not succeed for all kinds of
-  // update
-  txid = atomic_fetch_add_explicit(&lru->txid, 1, memory_order_relaxed);
-  // switch on cmd->req.op to perform tasks
-  // add should always be write_key
-  // replace -> write_key = false
   switch(cmd->req.op)
     {
     case PROTOCOL_BINARY_CMD_SET:
@@ -414,7 +412,10 @@ bool lru_update_bucket(lru_t* lru, struct bucket* bucket, cmd_handler* cmd)
       // Set may be a cas request. Other than cas logic it is
       // same as replace logic.
       if (cmd->req.cas > 0 && cmd->req.cas != bucket->ibucket.cas)
-        return false;
+        {
+          lru_val->errcode = STATUS_KEY_EXISTS;
+          return false;
+        }
     case PROTOCOL_BINARY_CMD_REPLACE:
     case PROTOCOL_BINARY_CMD_REPLACEQ:
       txid = atomic_fetch_add_explicit(&lru->txid, 1, memory_order_relaxed);
@@ -559,15 +560,10 @@ bool lru_update_bucket(lru_t* lru, struct bucket* bucket, cmd_handler* cmd)
         ed_errno = 0;
         uint64_t numeric_val = strn2uint64(&bucket->ibucket.data[inline_keylen],
             bucket->ibucket.vallen, &valiter);
-        if (ed_errno) {
-          // syslog err
-          // write error?
-          return false;
-        }
-        int numeric_vallen = numeric_val == 0 ? 1 : floor(log10(numeric_val)) + 1;
-        if (numeric_vallen != bucket->ibucket.vallen) {
-          // syslog err
-          // write error?
+        if (ed_errno || valiter - &bucket->ibucket.data[inline_keylen] !=
+            bucket->ibucket.vallen) {
+          syslog(LOG_ERR, "cannot increment or decrement non-numeric value");
+          lru_val->errcode = STATUS_NON_NUMERIC;
           return false;
         }
         if (bucket->ibucket.vallen > inline_vallen) {
@@ -596,9 +592,6 @@ bool lru_update_bucket(lru_t* lru, struct bucket* bucket, cmd_handler* cmd)
       if (cmd->extra.numeric.init_value != UINT64_MAX)
         bucket->ibucket.epoch = now + cmd->extra.twoval.expiration;
       return true;
-      // Check value can be converted to non-negative numerical or not
-      // if yes -> get txid, do work
-      // if no -> return false
     case PROTOCOL_BINARY_CMD_TOUCH:
     case PROTOCOL_BINARY_CMD_TOUCHQ:
       txid = atomic_load_explicit(&lru->txid,
@@ -607,9 +600,10 @@ bool lru_update_bucket(lru_t* lru, struct bucket* bucket, cmd_handler* cmd)
       bucket->ibucket.epoch = now + cmd->extra.twoval.expiration;
       return true;
     default:
-      // syslog error
-      return false;
     }
+  syslog(LOG_ERR, "Unknown op %d", cmd->req.op);
+  lru_val->errcode = STATUS_INTERNAL_ERR;
+  return false;
 }
 
 void lru_delete(lru_t* lru, void* key, size_t keylen)
