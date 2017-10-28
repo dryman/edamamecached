@@ -161,10 +161,10 @@ static inline bool memeq(const void* ptr1, const void* ptr2, size_t num)
 
 extern __thread int ed_errno;
 
-static inline bool ed_isspace(const char* str)
+static inline bool ed_isspace(char chr)
 {
-  return *str == ' ' || *str == '\t' || *str == '\n' || *str == '\v' ||
-   *str == '\f' || *str == '\r';
+  return chr == ' ' || chr == '\t' || chr == '\n' || chr == '\v' ||
+   chr == '\f' || chr == '\r';
 }
 
 uint64_t strn2uint64(const char* str, size_t n, char** stop);

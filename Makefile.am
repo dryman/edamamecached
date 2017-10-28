@@ -11,7 +11,8 @@ cmd_parser_test_SOURCES = \
   cmd_protocol.c \
   cmd_parser.c \
   cmd_parser.h \
-  cmd_parser_test.c
+  cmd_parser_test.c \
+  util.c
 cmd_parser_test_CFLAGS = @cmocka_CFLAGS@
 cmd_parser_test_LDADD = @cmocka_LIBS@
 
@@ -24,5 +25,7 @@ edamamecached_SOURCES = \
   writer.c \
   writer.h \
   cmd_reader.c \
-  cmd_reader.h
+  cmd_reader.h \
+  util.h \
+  util.c
 

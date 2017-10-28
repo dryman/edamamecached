@@ -26,7 +26,7 @@ static char LINE_TOO_LONG_ERROR[] = "ERROR line too long\r\n";
 bool parse_uint32(uint32_t* dest, char** iter)
 {
   const char* buf;
-  while (isspace(**iter)) (*iter)++;
+  while (ed_isspace(**iter)) (*iter)++;
   if (**iter == '-')
     return false;
 
@@ -44,7 +44,7 @@ bool parse_uint32(uint32_t* dest, char** iter)
 bool parse_uint64(uint64_t* dest, char** iter)
 {
   const char* buf;
-  while (isspace(**iter)) (*iter)++;
+  while (ed_isspace(**iter)) (*iter)++;
   if (**iter == '-')
     return false;
 
@@ -104,7 +104,7 @@ ssize_t ascii_cpbuf(cmd_handler* cmd, ssize_t nbyte, char* buf, ed_writer* write
     }
   if (cmd->state == CMD_CLEAN)
     {
-      while (idx < nbyte && isspace(buf[idx])) idx++;
+      while (idx < nbyte && ed_isspace(buf[idx])) idx++;
       if (idx == nbyte) return nbyte;
       if (memeq(&buf[idx], CMD_STR_GET, sizeof(CMD_STR_GET)))
         {
