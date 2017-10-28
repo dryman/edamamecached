@@ -167,6 +167,8 @@ static inline bool ed_isspace(char chr)
    chr == '\f' || chr == '\r';
 }
 
+#define round_up_div(X, Y) ((X) + (Y) - 1)/(Y)
+
 uint64_t strn2uint64(const char* str, size_t n, char** stop);
 uint32_t strn2uint32(const char* str, size_t n, char** stop);
 uint16_t strn2uint16(const char* str, size_t n, char** stop);
