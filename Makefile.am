@@ -1,5 +1,5 @@
-TESTS = cmd_protocol_test cmd_parser_test
-check_PROGRAMS = cmd_protocol_test cmd_parser_test
+TESTS = cmd_protocol_test cmd_parser_test lru_test
+check_PROGRAMS = cmd_protocol_test cmd_parser_test lru_test
 bin_PROGRAMS = edamamecached
 
 cmd_protocol_test_SOURCES = cmd_protocol_test.c cmd_protocol.c
@@ -16,6 +16,14 @@ cmd_parser_test_SOURCES = \
 cmd_parser_test_CFLAGS = @cmocka_CFLAGS@
 cmd_parser_test_LDADD = @cmocka_LIBS@
 
+lru_test_SOURCES = \
+  lru.c \
+  lru_test.c \
+  cityhash.c \
+  util.c
+lru_test_CFLAGS = @cmocka_CFLAGS@
+lru_test_LDADD = @cmocka_LIBS@ -lurcu
+
 edamamecached_SOURCES = \
   server.c \
   cmd_protocol.c \
@@ -24,8 +32,13 @@ edamamecached_SOURCES = \
   cmd_parser.h \
   writer.c \
   writer.h \
+  cityhash.c \
+  cityhash.h \
+  lru.c \
+  lru.h \
   cmd_reader.c \
   cmd_reader.h \
   util.h \
   util.c
 
+edamamecached_LDADD = -lurcu

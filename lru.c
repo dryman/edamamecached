@@ -1,4 +1,3 @@
-#include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -6,36 +5,12 @@
 #include <time.h>
 #include <syslog.h>
 #include <tgmath.h>
+#include <urcu.h>
 #include "cmd_parser.h"
 #include "util.h"
 #include "lru.h"
 #include "cityhash.h"
 
-#define PROBE_STATS_SIZE 512
-
-struct lru_t
-{
-  uint8_t capacity_clz;
-  uint8_t capacity_ms4b;
-  size_t inline_keylen;
-  size_t inline_vallen;
-
-  atomic_uint longest_probes;
-  atomic_ullong objcnt;
-  atomic_ullong txid;
-  atomic_uint probe_stats[PROBE_STATS_SIZE];
-
-  atomic_ullong inline_acc_keylen;
-  atomic_ullong inline_acc_vallen;
-  atomic_uint ninline_keycnt;
-  atomic_uint ninline_valcnt;
-  atomic_ullong ninline_keylen;
-  atomic_ullong ninline_vallen;
-
-  atomic_ullong tmp_bucket_bmap;
-  uint8_t* buckets;
-  uint8_t* tmp_buckets;
-};
 
 struct inner_bucket
 {
@@ -100,6 +75,71 @@ lru_t* lru_init(uint64_t num_objects, size_t inline_keylen, size_t inline_vallen
   lru->tmp_buckets = calloc(ibucket_size, 64);
 
   return lru;
+}
+
+void lru_cleanup(lru_t* lru)
+{
+  size_t inline_keylen, inline_vallen, ibucket_size, bucket_size;
+  uint64_t capacity;
+  uint8_t* buckets, magic, new_magic;
+  struct bucket* bucket;
+  void *keyptr, *valptr;
+
+  inline_keylen = lru->inline_keylen;
+  inline_vallen = lru->inline_vallen;
+  bucket_size = sizeof(struct bucket) + inline_keylen + inline_vallen;
+  ibucket_size = sizeof(struct inner_bucket) + inline_keylen + inline_vallen;
+  buckets = lru->buckets;
+  capacity = lru_capacity(lru->capacity_clz, lru->capacity_ms4b);
+
+  for (size_t idx = 0; idx < capacity; idx++)
+    {
+      bucket = (struct bucket*)&buckets[bucket_size * idx];
+      while (true) {
+        magic = atomic_load_explicit(&bucket->magic, memory_order_acquire);
+        if (magic == 0x00 || magic == 0x02)
+          goto next_loop;
+        if (magic == 0x80 || magic == 0x82 || (magic & 0x3) == 0x3)
+          continue;
+        new_magic = 0x82;
+        if (atomic_compare_exchange_strong(&bucket->magic, &magic, new_magic))
+          break;
+      }
+      if (bucket->ibucket.keylen > inline_keylen) {
+        keyptr = *((void**)&bucket->ibucket.data[0]);
+        free(keyptr);
+        atomic_fetch_sub_explicit(&lru->ninline_keycnt, 1,
+                                  memory_order_relaxed);
+        atomic_fetch_sub_explicit(&lru->ninline_keylen,
+                                  bucket->ibucket.keylen,
+                                  memory_order_relaxed);
+      } else {
+        atomic_fetch_sub_explicit(&lru->inline_acc_keylen,
+                                  bucket->ibucket.keylen,
+                                  memory_order_relaxed);
+      }
+      if (!bucket->ibucket.is_numeric_val) {
+        if (bucket->ibucket.vallen > inline_vallen) {
+          valptr = *((void**)&bucket->ibucket.data[inline_keylen]);
+          free(valptr);
+          atomic_fetch_sub_explicit(&lru->ninline_valcnt, 1,
+                                    memory_order_relaxed);
+          atomic_fetch_sub_explicit(&lru->ninline_vallen,
+                                    bucket->ibucket.vallen,
+                                    memory_order_relaxed);
+        } else {
+          atomic_fetch_sub_explicit(&lru->inline_acc_vallen,
+                                    bucket->ibucket.keylen,
+                                    memory_order_relaxed);
+        }
+      }
+      atomic_fetch_sub_explicit(&lru->objcnt, 1, memory_order_relaxed);
+      atomic_store_explicit(&bucket->magic, 0x02, memory_order_release);
+next_loop:
+      (void)0;
+    }
+  free(lru->buckets);
+  free(lru->tmp_buckets);
 }
 
 struct inner_bucket* alloc_tmpbucket(lru_t* lru, uint8_t* idx)
