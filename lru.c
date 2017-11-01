@@ -73,6 +73,7 @@ lru_t* lru_init(uint64_t num_objects, size_t inline_keylen, size_t inline_vallen
   lru->inline_vallen = inline_vallen;
   lru->buckets = calloc(bucket_size, capacity);
   lru->tmp_buckets = calloc(ibucket_size, 64);
+  lru->txid = 1;
 
   return lru;
 }
@@ -156,14 +157,14 @@ reload:
   bmap = atomic_load_explicit(&lru->tmp_bucket_bmap, memory_order_acquire);
   do
     {
-      if (~bmap)
+      if (!(~bmap))
         goto reload;
       new_bmap = bmap + 1;
       bmbit = __builtin_ctzl(new_bmap);
       new_bmap |= bmap;
     } while(!atomic_compare_exchange_strong_explicit
             (&lru->tmp_bucket_bmap, &bmap, new_bmap,
-             memory_order_acq_rel,
+             memory_order_release,
              memory_order_acquire));
   *idx = bmbit;
   return (struct inner_bucket*)&lru->tmp_buckets[ibucket_size * bmbit];
@@ -221,7 +222,9 @@ bool lru_get(lru_t* lru, cmd_handler* cmd, lru_val_t* lru_val)
           bucket = (struct bucket*)&buckets[idx * bucket_size];
           magic = atomic_load_explicit(&bucket->magic, memory_order_acquire);
           if ((magic & 0x3) == 0) 
-            return false;
+            {
+              return false;
+            }
           if ((magic & 0x3) == 2)
             goto next_iter;
           if (magic == 1)
@@ -298,14 +301,13 @@ bool lru_upsert(lru_t* lru, cmd_handler* cmd, lru_val_t* lru_val)
   struct bucket* bucket;
   struct inner_bucket* ibucket;
   void *keyptr;
+  bool ret;
 
   inline_keylen = lru->inline_keylen;
   inline_vallen = lru->inline_vallen;
   keylen = cmd->req.keylen;
   bucket_size = sizeof(struct bucket) + inline_keylen + inline_vallen;
   ibucket_size = sizeof(struct inner_bucket) + inline_keylen + inline_vallen;
-  longest_probes = atomic_load_explicit(&lru->longest_probes,
-                                        memory_order_acquire);
   buckets = lru->buckets;
 
   capacity = lru_capacity(lru->capacity_clz, lru->capacity_ms4b);
@@ -369,6 +371,16 @@ check_magic:
                 goto check_magic;
               lru_write_empty_bucket(lru, bucket, cmd, lru_val);
               atomic_store_explicit(&bucket->magic, 1, memory_order_release);
+              atomic_fetch_add_explicit(&lru->probe_stats[probe], 1,
+                                        memory_order_relaxed);
+              do {
+                longest_probes = atomic_load_explicit(&lru->longest_probes,
+                                                      memory_order_acquire);
+                if (probe <= longest_probes) 
+                  break;
+              } while (!atomic_compare_exchange_strong_explicit(
+                  &lru->longest_probes, &longest_probes, probe,
+                  memory_order_release, memory_order_relaxed));
               return true;
             }
           if (bucket->ibucket.keylen != keylen)
@@ -393,11 +405,11 @@ check_magic:
             }
           memcpy(ibucket, &bucket->ibucket, ibucket_size);
           synchronize_rcu();
-          lru_update_bucket(lru, bucket, cmd, lru_val);
+          ret = lru_update_bucket(lru, bucket, cmd, lru_val);
           atomic_store_explicit(&bucket->magic, 1, memory_order_release);
           synchronize_rcu();
           free_tmpbucket(lru, tmp_idx);
-          return true;
+          return ret;
 next_iter:
           if (++i == 4) break;
           idx++;
@@ -420,8 +432,7 @@ void lru_write_empty_bucket(lru_t* lru, struct bucket* bucket, cmd_handler* cmd,
   
   now = time(NULL);
   txid = atomic_fetch_add_explicit(&lru->txid, 1, memory_order_relaxed);
-
-  bucket->txid = txid;
+  keylen = cmd->req.keylen;
 
   switch (cmd->req.op)
   {
@@ -429,12 +440,12 @@ void lru_write_empty_bucket(lru_t* lru, struct bucket* bucket, cmd_handler* cmd,
     case PROTOCOL_BINARY_CMD_SETQ:
     case PROTOCOL_BINARY_CMD_ADD:
     case PROTOCOL_BINARY_CMD_ADDQ:
+      bucket->txid = txid;
       bucket->ibucket.is_numeric_val = false;
       bucket->ibucket.flags = cmd->extra.twoval.flags;
       bucket->ibucket.epoch = now + cmd->extra.twoval.expiration;
       bucket->ibucket.cas = txid;
 
-      keylen = cmd->req.keylen;
       vallen = cmd->value_stored;
       bucket->ibucket.keylen = keylen;
       bucket->ibucket.vallen = vallen;
@@ -475,8 +486,23 @@ void lru_write_empty_bucket(lru_t* lru, struct bucket* bucket, cmd_handler* cmd,
     case PROTOCOL_BINARY_CMD_DECREMENT:
     case PROTOCOL_BINARY_CMD_DECREMENTQ:
       bucket->txid = txid;
+      bucket->ibucket.is_numeric_val = true;
       bucket->ibucket.cas = txid;
       bucket->ibucket.epoch = now + cmd->extra.twoval.expiration;
+      bucket->ibucket.keylen = keylen;
+      if (keylen > inline_keylen)
+      {
+        void** keyptr = (void**)&bucket->ibucket.data[0];
+        *keyptr = malloc(keylen);
+        memcpy(*keyptr, cmd->key, keylen);
+        atomic_fetch_add_explicit(&lru->ninline_keycnt, 1, memory_order_relaxed);
+        atomic_fetch_add_explicit(&lru->ninline_keylen, keylen, memory_order_relaxed);
+      }
+      else
+      {
+        memcpy(&bucket->ibucket.data[0], cmd->key, keylen);
+        atomic_fetch_add_explicit(&lru->inline_acc_keylen, keylen, memory_order_relaxed);
+      }
       bucket->ibucket.vallen = cmd->extra.numeric.init_value;
       if (cmd->req.op == PROTOCOL_BINARY_CMD_INCREMENT ||
           cmd->req.op == PROTOCOL_BINARY_CMD_INCREMENTQ)
@@ -527,13 +553,17 @@ bool lru_update_bucket(lru_t* lru, struct bucket* bucket, cmd_handler* cmd, lru_
       bucket->ibucket.flags = cmd->extra.twoval.flags;
       bucket->ibucket.epoch = now + cmd->extra.twoval.expiration;
       bucket->ibucket.cas = txid;
-      if (!(bucket->ibucket.is_numeric_val) &&
-          bucket->ibucket.vallen > inline_vallen) {
-        void** valptr = (void**)&bucket->ibucket.data[inline_keylen];
-        free(*valptr);
-        atomic_fetch_sub_explicit(&lru->ninline_valcnt, 1, memory_order_relaxed);
-        atomic_fetch_sub_explicit(&lru->ninline_vallen,
-            bucket->ibucket.vallen, memory_order_relaxed);
+      if (!bucket->ibucket.is_numeric_val) {
+        if (bucket->ibucket.vallen > inline_vallen) {
+          void** valptr = (void**)&bucket->ibucket.data[inline_keylen];
+          free(*valptr);
+          atomic_fetch_sub_explicit(&lru->ninline_valcnt, 1, memory_order_relaxed);
+          atomic_fetch_sub_explicit(&lru->ninline_vallen,
+                                    bucket->ibucket.vallen, memory_order_relaxed);
+        } else {
+          atomic_fetch_sub_explicit(&lru->inline_acc_vallen,
+                                    bucket->ibucket.vallen, memory_order_relaxed);
+        }
       }
       bucket->ibucket.vallen = vallen;
       if (vallen > inline_vallen) {

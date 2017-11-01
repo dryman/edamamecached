@@ -23,6 +23,7 @@ lru_test_SOURCES = \
   util.c
 lru_test_CFLAGS = @cmocka_CFLAGS@
 lru_test_LDADD = @cmocka_LIBS@ -lurcu
+#lru_test_LDFLAGS = -static
 
 edamamecached_SOURCES = \
   server.c \
