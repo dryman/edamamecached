@@ -23,10 +23,12 @@ static char BAD_DATA_ERROR[] = "CLIENT_ERROR bad data chunk\r\n";
 static char BAD_CMD_ERROR[] = "CLIENT_ERROR bad command line format\r\n";
 static char LINE_TOO_LONG_ERROR[] = "ERROR line too long\r\n";
 
-bool parse_uint32(uint32_t* dest, char** iter)
+bool
+parse_uint32(uint32_t *dest, char **iter)
 {
-  const char* buf;
-  while (ed_isspace(**iter)) (*iter)++;
+  const char *buf;
+  while (ed_isspace(**iter))
+    (*iter)++;
   if (**iter == '-')
     return false;
 
@@ -41,10 +43,12 @@ bool parse_uint32(uint32_t* dest, char** iter)
   return true;
 }
 
-bool parse_uint64(uint64_t* dest, char** iter)
+bool
+parse_uint64(uint64_t *dest, char **iter)
 {
-  const char* buf;
-  while (ed_isspace(**iter)) (*iter)++;
+  const char *buf;
+  while (ed_isspace(**iter))
+    (*iter)++;
   if (**iter == '-')
     return false;
 
@@ -58,7 +62,8 @@ bool parse_uint64(uint64_t* dest, char** iter)
 }
 
 // need a ascii flush error handler
-void reset_cmd_handler(cmd_handler* cmd)
+void
+reset_cmd_handler(cmd_handler *cmd)
 {
   syslog(LOG_DEBUG, "reset cmd");
   cmd->state = CMD_CLEAN;
@@ -74,38 +79,47 @@ void reset_cmd_handler(cmd_handler* cmd)
   cmd->value_stored = 0;
 }
 
-ssize_t ascii_cmd_error(cmd_handler* cmd, ssize_t nbyte, char* buf)
+ssize_t
+ascii_cmd_error(cmd_handler *cmd, ssize_t nbyte, char *buf)
 {
   syslog(LOG_DEBUG, "ascii_cmd_error");
   ssize_t idx = 0;
-  while (idx < nbyte && buf[idx] != '\r') idx++;
+  while (idx < nbyte && buf[idx] != '\r')
+    idx++;
 
   // we reached to the end of buffer, but hasn't find '\r'
   // state remain ASCII_ERROR
-  if (idx == nbyte) return idx;
+  if (idx == nbyte)
+    return idx;
 
   // We found '\r', now reset the state to CMD_CLEAN
   reset_cmd_handler(cmd);
   // There might be an additional '\n'
-  if (idx < nbyte - 1 && buf[idx + 1] == '\n') return idx + 1;
+  if (idx < nbyte - 1 && buf[idx + 1] == '\n')
+    return idx + 1;
   return idx;
 }
 
-ssize_t ascii_cpbuf(cmd_handler* cmd, ssize_t nbyte, char* buf, ed_writer* writer)
+ssize_t
+ascii_cpbuf(cmd_handler *cmd, ssize_t nbyte, char *buf, ed_writer *writer)
 {
   ssize_t idx = 0, linebreak;
   // TODO check this logic
   if (cmd->skip_until_newline)
     {
-      while (idx < nbyte && buf[idx] != '\n') idx++;
-      if (idx == nbyte) return idx;
+      while (idx < nbyte && buf[idx] != '\n')
+        idx++;
+      if (idx == nbyte)
+        return idx;
       reset_cmd_handler(cmd);
       return idx + 1;
     }
   if (cmd->state == CMD_CLEAN)
     {
-      while (idx < nbyte && ed_isspace(buf[idx])) idx++;
-      if (idx == nbyte) return nbyte;
+      while (idx < nbyte && ed_isspace(buf[idx]))
+        idx++;
+      if (idx == nbyte)
+        return nbyte;
       if (memeq(&buf[idx], CMD_STR_GET, sizeof(CMD_STR_GET)))
         {
           cmd->state = ASCII_PENDING_GET_MULTI;
@@ -149,8 +163,8 @@ ssize_t ascii_cpbuf(cmd_handler* cmd, ssize_t nbyte, char* buf, ed_writer* write
   return linebreak + 1;
 }
 
-
-void ascii_parse_cmd(cmd_handler* cmd, ed_writer* writer)
+void
+ascii_parse_cmd(cmd_handler *cmd, ed_writer *writer)
 {
   char *iter1, *iter2;
   iter1 = cmd->buffer;
@@ -159,9 +173,11 @@ void ascii_parse_cmd(cmd_handler* cmd, ed_writer* writer)
     {
       cmd->req.op = PROTOCOL_BINARY_CMD_SET;
       iter1 += sizeof(CMD_STR_SET);
-      while (*iter1 == ' ') iter1++;
+      while (*iter1 == ' ')
+        iter1++;
       iter2 = iter1;
-      while (isgraph(*iter2)) iter2++;
+      while (isgraph(*iter2))
+        iter2++;
       cmd->key = iter1;
       cmd->req.keylen = iter2 - iter1;
       iter1 = iter2;
@@ -186,12 +202,14 @@ void ascii_parse_cmd(cmd_handler* cmd, ed_writer* writer)
           reset_cmd_handler(cmd);
           return;
         }
-      while (*iter1 == ' ') iter1++;
+      while (*iter1 == ' ')
+        iter1++;
       if (memeq(iter1, CMD_STR_NOREPLY, sizeof(CMD_STR_NOREPLY)))
         {
           cmd->req.op = PROTOCOL_BINARY_CMD_SETQ;
           iter1 += sizeof(CMD_STR_NOREPLY);
-          while (*iter1 == ' ') iter1++;
+          while (*iter1 == ' ')
+            iter1++;
         }
       if (*iter1 != '\r' && *iter1 != '\n')
         {
@@ -207,9 +225,11 @@ void ascii_parse_cmd(cmd_handler* cmd, ed_writer* writer)
     {
       cmd->req.op = PROTOCOL_BINARY_CMD_ADD;
       iter1 += sizeof(CMD_STR_ADD);
-      while (*iter1 == ' ') iter1++;
+      while (*iter1 == ' ')
+        iter1++;
       iter2 = iter1;
-      while (isgraph(*iter2)) iter2++;
+      while (isgraph(*iter2))
+        iter2++;
       cmd->key = iter1;
       cmd->req.keylen = iter2 - iter1;
       iter1 = iter2;
@@ -234,12 +254,14 @@ void ascii_parse_cmd(cmd_handler* cmd, ed_writer* writer)
           reset_cmd_handler(cmd);
           return;
         }
-      while (*iter1 == ' ') iter1++;
+      while (*iter1 == ' ')
+        iter1++;
       if (memeq(iter1, CMD_STR_NOREPLY, sizeof(CMD_STR_NOREPLY)))
         {
           cmd->req.op = PROTOCOL_BINARY_CMD_ADDQ;
           iter1 += sizeof(CMD_STR_NOREPLY);
-          while (*iter1 == ' ') iter1++;
+          while (*iter1 == ' ')
+            iter1++;
         }
       if (*iter1 != '\r' && *iter1 != '\n')
         {
@@ -255,9 +277,11 @@ void ascii_parse_cmd(cmd_handler* cmd, ed_writer* writer)
     {
       cmd->req.op = PROTOCOL_BINARY_CMD_REPLACE;
       iter1 += sizeof(CMD_STR_REPLACE);
-      while (*iter1 == ' ') iter1++;
+      while (*iter1 == ' ')
+        iter1++;
       iter2 = iter1;
-      while (isgraph(*iter2)) iter2++;
+      while (isgraph(*iter2))
+        iter2++;
       cmd->key = iter1;
       cmd->req.keylen = iter2 - iter1;
       iter1 = iter2;
@@ -282,12 +306,14 @@ void ascii_parse_cmd(cmd_handler* cmd, ed_writer* writer)
           reset_cmd_handler(cmd);
           return;
         }
-      while (*iter1 == ' ') iter1++;
+      while (*iter1 == ' ')
+        iter1++;
       if (memeq(iter1, CMD_STR_NOREPLY, sizeof(CMD_STR_NOREPLY)))
         {
           cmd->req.op = PROTOCOL_BINARY_CMD_REPLACEQ;
           iter1 += sizeof(CMD_STR_NOREPLY);
-          while (*iter1 == ' ') iter1++;
+          while (*iter1 == ' ')
+            iter1++;
         }
       if (*iter1 != '\r' && *iter1 != '\n')
         {
@@ -303,9 +329,11 @@ void ascii_parse_cmd(cmd_handler* cmd, ed_writer* writer)
     {
       cmd->req.op = PROTOCOL_BINARY_CMD_APPEND;
       iter1 += sizeof(CMD_STR_APPEND);
-      while (*iter1 == ' ') iter1++;
+      while (*iter1 == ' ')
+        iter1++;
       iter2 = iter1;
-      while (isgraph(*iter2)) iter2++;
+      while (isgraph(*iter2))
+        iter2++;
       cmd->key = iter1;
       cmd->req.keylen = iter2 - iter1;
       iter1 = iter2;
@@ -330,12 +358,14 @@ void ascii_parse_cmd(cmd_handler* cmd, ed_writer* writer)
           reset_cmd_handler(cmd);
           return;
         }
-      while (*iter1 == ' ') iter1++;
+      while (*iter1 == ' ')
+        iter1++;
       if (memeq(iter1, CMD_STR_NOREPLY, sizeof(CMD_STR_NOREPLY)))
         {
           cmd->req.op = PROTOCOL_BINARY_CMD_APPENDQ;
           iter1 += sizeof(CMD_STR_NOREPLY);
-          while (*iter1 == ' ') iter1++;
+          while (*iter1 == ' ')
+            iter1++;
         }
       if (*iter1 != '\r' && *iter1 != '\n')
         {
@@ -351,9 +381,11 @@ void ascii_parse_cmd(cmd_handler* cmd, ed_writer* writer)
     {
       cmd->req.op = PROTOCOL_BINARY_CMD_PREPEND;
       iter1 += sizeof(CMD_STR_PREPEND);
-      while (*iter1 == ' ') iter1++;
+      while (*iter1 == ' ')
+        iter1++;
       iter2 = iter1;
-      while (isgraph(*iter2)) iter2++;
+      while (isgraph(*iter2))
+        iter2++;
       cmd->key = iter1;
       cmd->req.keylen = iter2 - iter1;
       iter1 = iter2;
@@ -378,12 +410,14 @@ void ascii_parse_cmd(cmd_handler* cmd, ed_writer* writer)
           reset_cmd_handler(cmd);
           return;
         }
-      while (*iter1 == ' ') iter1++;
+      while (*iter1 == ' ')
+        iter1++;
       if (memeq(iter1, CMD_STR_NOREPLY, sizeof(CMD_STR_NOREPLY)))
         {
           cmd->req.op = PROTOCOL_BINARY_CMD_PREPENDQ;
           iter1 += sizeof(CMD_STR_NOREPLY);
-          while (*iter1 == ' ') iter1++;
+          while (*iter1 == ' ')
+            iter1++;
         }
       if (*iter1 != '\r' && *iter1 != '\n')
         {
@@ -400,9 +434,11 @@ void ascii_parse_cmd(cmd_handler* cmd, ed_writer* writer)
       // CAS is equivalent to set but with CAS value
       cmd->req.op = PROTOCOL_BINARY_CMD_SET;
       iter1 += sizeof(CMD_STR_CAS);
-      while (*iter1 == ' ') iter1++;
+      while (*iter1 == ' ')
+        iter1++;
       iter2 = iter1;
-      while (isgraph(*iter2)) iter2++;
+      while (isgraph(*iter2))
+        iter2++;
       cmd->key = iter1;
       cmd->req.keylen = iter2 - iter1;
       iter1 = iter2;
@@ -434,12 +470,14 @@ void ascii_parse_cmd(cmd_handler* cmd, ed_writer* writer)
           reset_cmd_handler(cmd);
           return;
         }
-      while (*iter1 == ' ') iter1++;
+      while (*iter1 == ' ')
+        iter1++;
       if (memeq(iter1, CMD_STR_NOREPLY, sizeof(CMD_STR_NOREPLY)))
         {
           cmd->req.op = PROTOCOL_BINARY_CMD_SETQ;
           iter1 += sizeof(CMD_STR_NOREPLY);
-          while (*iter1 == ' ') iter1++;
+          while (*iter1 == ' ')
+            iter1++;
         }
       if (*iter1 != '\r' && *iter1 != '\n')
         {
@@ -455,18 +493,22 @@ void ascii_parse_cmd(cmd_handler* cmd, ed_writer* writer)
     {
       cmd->req.op = PROTOCOL_BINARY_CMD_DELETE;
       iter1 += sizeof(CMD_STR_DELETE);
-      while (*iter1 == ' ') iter1++;
+      while (*iter1 == ' ')
+        iter1++;
       iter2 = iter1;
-      while (isgraph(*iter2)) iter2++;
+      while (isgraph(*iter2))
+        iter2++;
       cmd->key = iter1;
       cmd->req.keylen = iter2 - iter1;
       iter1 = iter2;
-      while (*iter1 == ' ') iter1++;
+      while (*iter1 == ' ')
+        iter1++;
       if (memeq(iter1, CMD_STR_NOREPLY, sizeof(CMD_STR_NOREPLY)))
         {
           cmd->req.op = PROTOCOL_BINARY_CMD_DELETEQ;
           iter1 += sizeof(CMD_STR_NOREPLY);
-          while (*iter1 == ' ') iter1++;
+          while (*iter1 == ' ')
+            iter1++;
         }
       if (*iter1 != '\r')
         {
@@ -482,9 +524,11 @@ void ascii_parse_cmd(cmd_handler* cmd, ed_writer* writer)
     {
       cmd->req.op = PROTOCOL_BINARY_CMD_INCREMENT;
       iter1 += sizeof(CMD_STR_INCR);
-      while (*iter1 == ' ') iter1++;
+      while (*iter1 == ' ')
+        iter1++;
       iter2 = iter1;
-      while (isgraph(*iter2)) iter2++;
+      while (isgraph(*iter2))
+        iter2++;
       cmd->key = iter1;
       cmd->req.keylen = iter2 - iter1;
       iter1 = iter2;
@@ -497,12 +541,14 @@ void ascii_parse_cmd(cmd_handler* cmd, ed_writer* writer)
         }
       cmd->extra.numeric.init_value = 0;
       cmd->extra.numeric.expiration = 0;
-      while (*iter1 == ' ') iter1++;
+      while (*iter1 == ' ')
+        iter1++;
       if (memeq(iter1, CMD_STR_NOREPLY, sizeof(CMD_STR_NOREPLY)))
         {
           cmd->req.op = PROTOCOL_BINARY_CMD_INCREMENTQ;
           iter1 += sizeof(CMD_STR_NOREPLY);
-          while (*iter1 == ' ') iter1++;
+          while (*iter1 == ' ')
+            iter1++;
         }
       if (*iter1 != '\r' && *iter1 != '\n')
         {
@@ -518,9 +564,11 @@ void ascii_parse_cmd(cmd_handler* cmd, ed_writer* writer)
     {
       cmd->req.op = PROTOCOL_BINARY_CMD_DECREMENT;
       iter1 += sizeof(CMD_STR_DECR);
-      while (*iter1 == ' ') iter1++;
+      while (*iter1 == ' ')
+        iter1++;
       iter2 = iter1;
-      while (isgraph(*iter2)) iter2++;
+      while (isgraph(*iter2))
+        iter2++;
       cmd->key = iter1;
       cmd->req.keylen = iter2 - iter1;
       iter1 = iter2;
@@ -533,12 +581,14 @@ void ascii_parse_cmd(cmd_handler* cmd, ed_writer* writer)
         }
       cmd->extra.numeric.init_value = 0;
       cmd->extra.numeric.expiration = 0;
-      while (*iter1 == ' ') iter1++;
+      while (*iter1 == ' ')
+        iter1++;
       if (memeq(iter1, CMD_STR_NOREPLY, sizeof(CMD_STR_NOREPLY)))
         {
           cmd->req.op = PROTOCOL_BINARY_CMD_DECREMENTQ;
           iter1 += sizeof(CMD_STR_NOREPLY);
-          while (*iter1 == ' ') iter1++;
+          while (*iter1 == ' ')
+            iter1++;
         }
       if (*iter1 != '\r' && *iter1 != '\n')
         {
@@ -554,9 +604,11 @@ void ascii_parse_cmd(cmd_handler* cmd, ed_writer* writer)
     {
       cmd->req.op = PROTOCOL_BINARY_CMD_TOUCH;
       iter1 += sizeof(CMD_STR_TOUCH);
-      while (*iter1 == ' ') iter1++;
+      while (*iter1 == ' ')
+        iter1++;
       iter2 = iter1;
-      while (isgraph(*iter2)) iter2++;
+      while (isgraph(*iter2))
+        iter2++;
       cmd->key = iter1;
       cmd->req.keylen = iter2 - iter1;
       iter1 = iter2;
@@ -567,12 +619,14 @@ void ascii_parse_cmd(cmd_handler* cmd, ed_writer* writer)
           reset_cmd_handler(cmd);
           return;
         }
-      while (*iter1 == ' ') iter1++;
+      while (*iter1 == ' ')
+        iter1++;
       if (memeq(iter1, CMD_STR_NOREPLY, sizeof(CMD_STR_NOREPLY)))
         {
           cmd->req.op = PROTOCOL_BINARY_CMD_TOUCHQ;
           iter1 += sizeof(CMD_STR_NOREPLY);
-          while (*iter1 == ' ') iter1++;
+          while (*iter1 == ' ')
+            iter1++;
         }
       if (*iter1 != '\r' && *iter1 != '\n')
         {
@@ -590,22 +644,25 @@ void ascii_parse_cmd(cmd_handler* cmd, ed_writer* writer)
   reset_cmd_handler(cmd);
 }
 
-ssize_t cmd_parse_ascii_value(cmd_handler* cmd, ssize_t nbyte, char* buf, ed_writer* writer)
+ssize_t
+cmd_parse_ascii_value(cmd_handler *cmd, ssize_t nbyte, char *buf,
+                      ed_writer *writer)
 {
   ssize_t partial_len, idx;
 
   if (cmd->skip_until_newline)
     {
       idx = 0;
-      while (idx < nbyte && buf[idx] != '\n') idx++;
-      if (idx == nbyte) return idx;
+      while (idx < nbyte && buf[idx] != '\n')
+        idx++;
+      if (idx == nbyte)
+        return idx;
       reset_cmd_handler(cmd);
       return idx + 1;
     }
   if (cmd->value_stored == 0 && nbyte > cmd->req.bodylen + 2)
     {
-      if (buf[cmd->req.bodylen + 1] == '\n' &&
-          buf[cmd->req.bodylen] == '\r')
+      if (buf[cmd->req.bodylen + 1] == '\n' && buf[cmd->req.bodylen] == '\r')
         {
           cmd->value = buf;
           cmd->val_copied = false;
@@ -638,11 +695,9 @@ ssize_t cmd_parse_ascii_value(cmd_handler* cmd, ssize_t nbyte, char* buf, ed_wri
       cmd->value_stored += nbyte;
       return nbyte;
     }
-  else if (buf[partial_len + 1] == '\n' &&
-           buf[partial_len] == '\r')
+  else if (buf[partial_len + 1] == '\n' && buf[partial_len] == '\r')
     {
-      memcpy(&cmd->value[cmd->value_stored],
-             buf, partial_len);
+      memcpy(&cmd->value[cmd->value_stored], buf, partial_len);
       cmd->value_stored = cmd->req.bodylen;
       cmd->state = ASCII_CMD_READY;
       return partial_len + 2;
@@ -653,7 +708,8 @@ ssize_t cmd_parse_ascii_value(cmd_handler* cmd, ssize_t nbyte, char* buf, ed_wri
   return partial_len + 2;
 }
 
-ssize_t cmd_parse_get(cmd_handler* cmd, ssize_t nbyte, char* buf, ed_writer* writer)
+ssize_t
+cmd_parse_get(cmd_handler *cmd, ssize_t nbyte, char *buf, ed_writer *writer)
 {
   ssize_t idx1, idx2;
   // idx1 for scanning space
@@ -662,8 +718,10 @@ ssize_t cmd_parse_get(cmd_handler* cmd, ssize_t nbyte, char* buf, ed_writer* wri
 
   if (cmd->skip_until_newline)
     {
-      while (idx2 < nbyte && buf[idx2] != '\n') idx2++;
-      if (idx2 == nbyte) return idx2;
+      while (idx2 < nbyte && buf[idx2] != '\n')
+        idx2++;
+      if (idx2 == nbyte)
+        return idx2;
       reset_cmd_handler(cmd);
       return idx2 + 1;
     }
@@ -753,7 +811,7 @@ ssize_t cmd_parse_get(cmd_handler* cmd, ssize_t nbyte, char* buf, ed_writer* wri
   if (buf[idx2] == '\r')
     {
       cmd->req.keylen = idx2 - idx1;
-       cmd->key = &buf[idx1];
+      cmd->key = &buf[idx1];
       // process get/gets
       process_cmd_get(cmd, writer);
       cmd->state = CMD_CLEAN;
@@ -766,7 +824,8 @@ ssize_t cmd_parse_get(cmd_handler* cmd, ssize_t nbyte, char* buf, ed_writer* wri
   return idx2;
 }
 
-ssize_t binary_cpbuf(cmd_handler* cmd, ssize_t nbyte, char* buf, ed_writer* writer)
+ssize_t
+binary_cpbuf(cmd_handler *cmd, ssize_t nbyte, char *buf, ed_writer *writer)
 {
   ssize_t cpbyte = 24 - cmd->buf_used;
   if (nbyte < cpbyte)
@@ -838,7 +897,9 @@ ssize_t binary_cpbuf(cmd_handler* cmd, ssize_t nbyte, char* buf, ed_writer* writ
   return cpbyte;
 }
 
-ssize_t binary_cmd_parse_extra(cmd_handler* cmd, ssize_t nbyte, char* buf, ed_writer* writer)
+ssize_t
+binary_cmd_parse_extra(cmd_handler *cmd, ssize_t nbyte, char *buf,
+                       ed_writer *writer)
 {
   ssize_t exbyte, cpbyte;
   switch (cmd->req.op)
@@ -898,10 +959,9 @@ ssize_t binary_cmd_parse_extra(cmd_handler* cmd, ssize_t nbyte, char* buf, ed_wr
     case PROTOCOL_BINARY_CMD_DECREMENT:
     case PROTOCOL_BINARY_CMD_INCREMENTQ:
     case PROTOCOL_BINARY_CMD_DECREMENTQ:
-      cmd->extra.numeric.addition_value =
-       ntohll(cmd->extra.numeric.addition_value);
-      cmd->extra.numeric.init_value =
-       ntohll(cmd->extra.numeric.init_value);
+      cmd->extra.numeric.addition_value
+          = ntohll(cmd->extra.numeric.addition_value);
+      cmd->extra.numeric.init_value = ntohll(cmd->extra.numeric.init_value);
       cmd->extra.numeric.expiration = ntohl(cmd->extra.numeric.expiration);
       cmd->state = BINARY_PENDING_PARSE_KEY;
       break;
@@ -924,7 +984,9 @@ ssize_t binary_cmd_parse_extra(cmd_handler* cmd, ssize_t nbyte, char* buf, ed_wr
   return cpbyte;
 }
 
-ssize_t binary_cmd_parse_key(cmd_handler* cmd, ssize_t nbyte, char* buf, ed_writer* writer)
+ssize_t
+binary_cmd_parse_key(cmd_handler *cmd, ssize_t nbyte, char *buf,
+                     ed_writer *writer)
 {
   ssize_t cpbyte;
   cpbyte = cmd->req.keylen - cmd->buf_used;
@@ -984,7 +1046,9 @@ ssize_t binary_cmd_parse_key(cmd_handler* cmd, ssize_t nbyte, char* buf, ed_writ
   return cpbyte;
 }
 
-ssize_t binary_cmd_parse_value(cmd_handler* cmd, ssize_t nbyte, char* buf, ed_writer* writer)
+ssize_t
+binary_cmd_parse_value(cmd_handler *cmd, ssize_t nbyte, char *buf,
+                       ed_writer *writer)
 {
   ssize_t partial_len;
   if (cmd->value_stored == 0 && nbyte >= cmd->req.bodylen)
@@ -1007,8 +1071,7 @@ ssize_t binary_cmd_parse_value(cmd_handler* cmd, ssize_t nbyte, char* buf, ed_wr
       cmd->value_stored += nbyte;
       return nbyte;
     }
-  memcpy(&cmd->value[cmd->value_stored],
-         buf, partial_len);
+  memcpy(&cmd->value[cmd->value_stored], buf, partial_len);
   cmd->value_stored = cmd->req.bodylen;
   cmd->state = BINARY_CMD_READY;
   return partial_len;

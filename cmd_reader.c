@@ -1,14 +1,15 @@
-#include <syslog.h>
-#include <ctype.h>
 #include "cmd_parser.h"
 #include "writer.h"
+#include <ctype.h>
+#include <syslog.h>
 
 char EOL[] = "\r\n";
 char ascii_ok[] = "ASCII OK\r\n";
 char binary_ok[] = "BINARY OK\r\n";
 char txt_stored[] = "STORED\r\n";
 
-void edamame_read(cmd_handler* cmd, int nbyte, char* data, ed_writer* writer)
+void
+edamame_read(cmd_handler *cmd, int nbyte, char *data, ed_writer *writer)
 {
   int idx = 0;
 
@@ -66,13 +67,14 @@ void edamame_read(cmd_handler* cmd, int nbyte, char* data, ed_writer* writer)
     }
 }
 
-void process_cmd_get(cmd_handler* cmd, ed_writer* writer)
+void
+process_cmd_get(cmd_handler *cmd, ed_writer *writer)
 {
   writer_reserve(writer, cmd->req.keylen);
   writer_append(writer, cmd->key, cmd->req.keylen);
   writer_reserve(writer, sizeof(EOL) - 1);
   writer_append(writer, EOL, sizeof(EOL) - 1);
-  //writer_reserve(writer, sizeof(txt_stored) - 1);
-  //writer_append(writer, txt_stored, sizeof(txt_stored) - 1);
+  // writer_reserve(writer, sizeof(txt_stored) - 1);
+  // writer_append(writer, txt_stored, sizeof(txt_stored) - 1);
   // do nothing for now
 }

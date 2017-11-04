@@ -1,23 +1,23 @@
-#include <stdio.h>
-#include <stdarg.h>
-#include <stddef.h>
-#include <setjmp.h>
-#include <stdint.h>
-#include <sys/mman.h>
-#include <string.h>
-#include <cmocka.h>
 #include "cmd_parser.h"
 #include "util.h"
+#include <setjmp.h>
+#include <stdarg.h>
+#include <stddef.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <string.h>
+#include <sys/mman.h>
+#include <cmocka.h>
 
 static void
-test_parse_uint(void** context)
+test_parse_uint(void **context)
 {
   uint32_t u32;
   uint64_t u64;
   char str1[] = "  234 ";
   char str2[] = "  abc1";
   char str3[] = "  -1";
-  char* ptr;
+  char *ptr;
 
   ptr = str1;
   assert_true(parse_uint32(&u32, &ptr));
@@ -39,7 +39,7 @@ test_parse_uint(void** context)
 }
 
 static void
-test_parse_ascii_value(void** context)
+test_parse_ascii_value(void **context)
 {
   char buf1[] = "01234\r\n789";
   char buf2[] = "0123456\r\n9";
@@ -90,7 +90,7 @@ test_parse_ascii_value(void** context)
 }
 
 static void
-test_ascii_cpbuf(void** context)
+test_ascii_cpbuf(void **context)
 {
   cmd_handler cmd = {};
   cmd.state = CMD_CLEAN;
@@ -147,7 +147,7 @@ test_ascii_cpbuf(void** context)
 }
 
 static void
-test_ascii_parse_cmd_set(void** context)
+test_ascii_parse_cmd_set(void **context)
 {
   cmd_handler cmd = {};
   char key[] = "mykey";
@@ -202,29 +202,29 @@ test_ascii_parse_cmd_set(void** context)
   strcpy(cmd.buffer, set_cmd4);
   cmd.buf_used = sizeof(set_cmd4) - 1;
   ascii_parse_cmd(&cmd, NULL);
-  //assert_int_equal(ASCII_ERROR, cmd.state);
+  // assert_int_equal(ASCII_ERROR, cmd.state);
 
   reset_cmd_handler(&cmd);
   strcpy(cmd.buffer, set_cmd5);
   cmd.buf_used = sizeof(set_cmd5) - 1;
   ascii_parse_cmd(&cmd, NULL);
-  //assert_int_equal(ASCII_ERROR, cmd.state);
+  // assert_int_equal(ASCII_ERROR, cmd.state);
 
   reset_cmd_handler(&cmd);
   strcpy(cmd.buffer, set_cmd6);
   cmd.buf_used = sizeof(set_cmd6) - 1;
   ascii_parse_cmd(&cmd, NULL);
-  //assert_int_equal(ASCII_ERROR, cmd.state);
+  // assert_int_equal(ASCII_ERROR, cmd.state);
 
   reset_cmd_handler(&cmd);
   strcpy(cmd.buffer, set_cmd7);
   cmd.buf_used = sizeof(set_cmd7) - 1;
   ascii_parse_cmd(&cmd, NULL);
-  //assert_int_equal(ASCII_ERROR, cmd.state);
+  // assert_int_equal(ASCII_ERROR, cmd.state);
 }
 
 static void
-test_ascii_parse_cmd_add(void** context)
+test_ascii_parse_cmd_add(void **context)
 {
   cmd_handler cmd = {};
   char key[] = "mykey";
@@ -279,29 +279,29 @@ test_ascii_parse_cmd_add(void** context)
   strcpy(cmd.buffer, add_cmd4);
   cmd.buf_used = sizeof(add_cmd4) - 1;
   ascii_parse_cmd(&cmd, NULL);
-  //assert_int_equal(ASCII_ERROR, cmd.state);
+  // assert_int_equal(ASCII_ERROR, cmd.state);
 
   reset_cmd_handler(&cmd);
   strcpy(cmd.buffer, add_cmd5);
   cmd.buf_used = sizeof(add_cmd5) - 1;
   ascii_parse_cmd(&cmd, NULL);
-  //assert_int_equal(ASCII_ERROR, cmd.state);
+  // assert_int_equal(ASCII_ERROR, cmd.state);
 
   reset_cmd_handler(&cmd);
   strcpy(cmd.buffer, add_cmd6);
   cmd.buf_used = sizeof(add_cmd6) - 1;
   ascii_parse_cmd(&cmd, NULL);
-  //assert_int_equal(ASCII_ERROR, cmd.state);
+  // assert_int_equal(ASCII_ERROR, cmd.state);
 
   reset_cmd_handler(&cmd);
   strcpy(cmd.buffer, add_cmd7);
   cmd.buf_used = sizeof(add_cmd7) - 1;
   ascii_parse_cmd(&cmd, NULL);
-  //assert_int_equal(ASCII_ERROR, cmd.state);
+  // assert_int_equal(ASCII_ERROR, cmd.state);
 }
 
 static void
-test_ascii_parse_cmd_replace(void** context)
+test_ascii_parse_cmd_replace(void **context)
 {
   cmd_handler cmd = {};
   char key[] = "mykey";
@@ -356,29 +356,29 @@ test_ascii_parse_cmd_replace(void** context)
   strcpy(cmd.buffer, replace_cmd4);
   cmd.buf_used = sizeof(replace_cmd4) - 1;
   ascii_parse_cmd(&cmd, NULL);
-  //assert_int_equal(ASCII_ERROR, cmd.state);
+  // assert_int_equal(ASCII_ERROR, cmd.state);
 
   reset_cmd_handler(&cmd);
   strcpy(cmd.buffer, replace_cmd5);
   cmd.buf_used = sizeof(replace_cmd5) - 1;
   ascii_parse_cmd(&cmd, NULL);
-  //assert_int_equal(ASCII_ERROR, cmd.state);
+  // assert_int_equal(ASCII_ERROR, cmd.state);
 
   reset_cmd_handler(&cmd);
   strcpy(cmd.buffer, replace_cmd6);
   cmd.buf_used = sizeof(replace_cmd6) - 1;
   ascii_parse_cmd(&cmd, NULL);
-  //assert_int_equal(ASCII_ERROR, cmd.state);
+  // assert_int_equal(ASCII_ERROR, cmd.state);
 
   reset_cmd_handler(&cmd);
   strcpy(cmd.buffer, replace_cmd7);
   cmd.buf_used = sizeof(replace_cmd7) - 1;
   ascii_parse_cmd(&cmd, NULL);
-  //assert_int_equal(ASCII_ERROR, cmd.state);
+  // assert_int_equal(ASCII_ERROR, cmd.state);
 }
 
 static void
-test_ascii_parse_cmd_append(void** context)
+test_ascii_parse_cmd_append(void **context)
 {
   cmd_handler cmd = {};
   char key[] = "mykey";
@@ -433,29 +433,29 @@ test_ascii_parse_cmd_append(void** context)
   strcpy(cmd.buffer, append_cmd4);
   cmd.buf_used = sizeof(append_cmd4) - 1;
   ascii_parse_cmd(&cmd, NULL);
-  //assert_int_equal(ASCII_ERROR, cmd.state);
+  // assert_int_equal(ASCII_ERROR, cmd.state);
 
   reset_cmd_handler(&cmd);
   strcpy(cmd.buffer, append_cmd5);
   cmd.buf_used = sizeof(append_cmd5) - 1;
   ascii_parse_cmd(&cmd, NULL);
-  //assert_int_equal(ASCII_ERROR, cmd.state);
+  // assert_int_equal(ASCII_ERROR, cmd.state);
 
   reset_cmd_handler(&cmd);
   strcpy(cmd.buffer, append_cmd6);
   cmd.buf_used = sizeof(append_cmd6) - 1;
   ascii_parse_cmd(&cmd, NULL);
-  //assert_int_equal(ASCII_ERROR, cmd.state);
+  // assert_int_equal(ASCII_ERROR, cmd.state);
 
   reset_cmd_handler(&cmd);
   strcpy(cmd.buffer, append_cmd7);
   cmd.buf_used = sizeof(append_cmd7) - 1;
   ascii_parse_cmd(&cmd, NULL);
-  //assert_int_equal(ASCII_ERROR, cmd.state);
+  // assert_int_equal(ASCII_ERROR, cmd.state);
 }
 
 static void
-test_ascii_parse_cmd_prepend(void** context)
+test_ascii_parse_cmd_prepend(void **context)
 {
   cmd_handler cmd = {};
   char key[] = "mykey";
@@ -510,29 +510,29 @@ test_ascii_parse_cmd_prepend(void** context)
   strcpy(cmd.buffer, prepend_cmd4);
   cmd.buf_used = sizeof(prepend_cmd4) - 1;
   ascii_parse_cmd(&cmd, NULL);
-  //assert_int_equal(ASCII_ERROR, cmd.state);
+  // assert_int_equal(ASCII_ERROR, cmd.state);
 
   reset_cmd_handler(&cmd);
   strcpy(cmd.buffer, prepend_cmd5);
   cmd.buf_used = sizeof(prepend_cmd5) - 1;
   ascii_parse_cmd(&cmd, NULL);
-  //assert_int_equal(ASCII_ERROR, cmd.state);
+  // assert_int_equal(ASCII_ERROR, cmd.state);
 
   reset_cmd_handler(&cmd);
   strcpy(cmd.buffer, prepend_cmd6);
   cmd.buf_used = sizeof(prepend_cmd6) - 1;
   ascii_parse_cmd(&cmd, NULL);
-  //assert_int_equal(ASCII_ERROR, cmd.state);
+  // assert_int_equal(ASCII_ERROR, cmd.state);
 
   reset_cmd_handler(&cmd);
   strcpy(cmd.buffer, prepend_cmd7);
   cmd.buf_used = sizeof(prepend_cmd7) - 1;
   ascii_parse_cmd(&cmd, NULL);
-  //assert_int_equal(ASCII_ERROR, cmd.state);
+  // assert_int_equal(ASCII_ERROR, cmd.state);
 }
 
 static void
-test_ascii_parse_cmd_cas(void** context)
+test_ascii_parse_cmd_cas(void **context)
 {
   cmd_handler cmd = {};
   char key[] = "mykey";
@@ -590,29 +590,29 @@ test_ascii_parse_cmd_cas(void** context)
   strcpy(cmd.buffer, cas_cmd4);
   cmd.buf_used = sizeof(cas_cmd4) - 1;
   ascii_parse_cmd(&cmd, NULL);
-  //assert_int_equal(ASCII_ERROR, cmd.state);
+  // assert_int_equal(ASCII_ERROR, cmd.state);
 
   reset_cmd_handler(&cmd);
   strcpy(cmd.buffer, cas_cmd5);
   cmd.buf_used = sizeof(cas_cmd5) - 1;
   ascii_parse_cmd(&cmd, NULL);
-  //assert_int_equal(ASCII_ERROR, cmd.state);
+  // assert_int_equal(ASCII_ERROR, cmd.state);
 
   reset_cmd_handler(&cmd);
   strcpy(cmd.buffer, cas_cmd6);
   cmd.buf_used = sizeof(cas_cmd6) - 1;
   ascii_parse_cmd(&cmd, NULL);
-  //assert_int_equal(ASCII_ERROR, cmd.state);
+  // assert_int_equal(ASCII_ERROR, cmd.state);
 
   reset_cmd_handler(&cmd);
   strcpy(cmd.buffer, cas_cmd7);
   cmd.buf_used = sizeof(cas_cmd7) - 1;
   ascii_parse_cmd(&cmd, NULL);
-  //assert_int_equal(ASCII_ERROR, cmd.state);
+  // assert_int_equal(ASCII_ERROR, cmd.state);
 }
 
 static void
-test_ascii_parse_cmd_delete(void** context)
+test_ascii_parse_cmd_delete(void **context)
 {
   cmd_handler cmd = {};
   char key[] = "mykey";
@@ -653,17 +653,17 @@ test_ascii_parse_cmd_delete(void** context)
   strcpy(cmd.buffer, delete_cmd4);
   cmd.buf_used = sizeof(delete_cmd4) - 1;
   ascii_parse_cmd(&cmd, NULL);
-  //assert_int_equal(ASCII_ERROR, cmd.state);
+  // assert_int_equal(ASCII_ERROR, cmd.state);
 
   reset_cmd_handler(&cmd);
   strcpy(cmd.buffer, delete_cmd5);
   cmd.buf_used = sizeof(delete_cmd5) - 1;
   ascii_parse_cmd(&cmd, NULL);
-  //assert_int_equal(ASCII_ERROR, cmd.state);
+  // assert_int_equal(ASCII_ERROR, cmd.state);
 }
 
 static void
-test_ascii_parse_cmd_incr(void** context)
+test_ascii_parse_cmd_incr(void **context)
 {
   cmd_handler cmd = {};
   char key[] = "mykey";
@@ -712,29 +712,29 @@ test_ascii_parse_cmd_incr(void** context)
   strcpy(cmd.buffer, incr_cmd4);
   cmd.buf_used = sizeof(incr_cmd4) - 1;
   ascii_parse_cmd(&cmd, NULL);
-  //assert_int_equal(ASCII_ERROR, cmd.state);
+  // assert_int_equal(ASCII_ERROR, cmd.state);
 
   reset_cmd_handler(&cmd);
   strcpy(cmd.buffer, incr_cmd5);
   cmd.buf_used = sizeof(incr_cmd5) - 1;
   ascii_parse_cmd(&cmd, NULL);
-  //assert_int_equal(ASCII_ERROR, cmd.state);
+  // assert_int_equal(ASCII_ERROR, cmd.state);
 
   reset_cmd_handler(&cmd);
   strcpy(cmd.buffer, incr_cmd6);
   cmd.buf_used = sizeof(incr_cmd6) - 1;
   ascii_parse_cmd(&cmd, NULL);
-  //assert_int_equal(ASCII_ERROR, cmd.state);
+  // assert_int_equal(ASCII_ERROR, cmd.state);
 
   reset_cmd_handler(&cmd);
   strcpy(cmd.buffer, incr_cmd7);
   cmd.buf_used = sizeof(incr_cmd7) - 1;
   ascii_parse_cmd(&cmd, NULL);
-  //assert_int_equal(ASCII_ERROR, cmd.state);
+  // assert_int_equal(ASCII_ERROR, cmd.state);
 }
 
 static void
-test_ascii_parse_cmd_decr(void** context)
+test_ascii_parse_cmd_decr(void **context)
 {
   cmd_handler cmd = {};
   char key[] = "mykey";
@@ -783,29 +783,29 @@ test_ascii_parse_cmd_decr(void** context)
   strcpy(cmd.buffer, decr_cmd4);
   cmd.buf_used = sizeof(decr_cmd4) - 1;
   ascii_parse_cmd(&cmd, NULL);
-  //assert_int_equal(ASCII_ERROR, cmd.state);
+  // assert_int_equal(ASCII_ERROR, cmd.state);
 
   reset_cmd_handler(&cmd);
   strcpy(cmd.buffer, decr_cmd5);
   cmd.buf_used = sizeof(decr_cmd5) - 1;
   ascii_parse_cmd(&cmd, NULL);
-  //assert_int_equal(ASCII_ERROR, cmd.state);
+  // assert_int_equal(ASCII_ERROR, cmd.state);
 
   reset_cmd_handler(&cmd);
   strcpy(cmd.buffer, decr_cmd6);
   cmd.buf_used = sizeof(decr_cmd6) - 1;
   ascii_parse_cmd(&cmd, NULL);
-  //assert_int_equal(ASCII_ERROR, cmd.state);
+  // assert_int_equal(ASCII_ERROR, cmd.state);
 
   reset_cmd_handler(&cmd);
   strcpy(cmd.buffer, decr_cmd7);
   cmd.buf_used = sizeof(decr_cmd7) - 1;
   ascii_parse_cmd(&cmd, NULL);
-  //assert_int_equal(ASCII_ERROR, cmd.state);
+  // assert_int_equal(ASCII_ERROR, cmd.state);
 }
 
 static void
-test_ascii_parse_cmd_touch(void** context)
+test_ascii_parse_cmd_touch(void **context)
 {
   cmd_handler cmd = {};
   char key[] = "mykey";
@@ -854,40 +854,56 @@ test_ascii_parse_cmd_touch(void** context)
   strcpy(cmd.buffer, touch_cmd4);
   cmd.buf_used = sizeof(touch_cmd4) - 1;
   ascii_parse_cmd(&cmd, NULL);
-  //assert_int_equal(ASCII_ERROR, cmd.state);
+  // assert_int_equal(ASCII_ERROR, cmd.state);
 
   reset_cmd_handler(&cmd);
   strcpy(cmd.buffer, touch_cmd5);
   cmd.buf_used = sizeof(touch_cmd5) - 1;
   ascii_parse_cmd(&cmd, NULL);
-  //assert_int_equal(ASCII_ERROR, cmd.state);
+  // assert_int_equal(ASCII_ERROR, cmd.state);
 
   reset_cmd_handler(&cmd);
   strcpy(cmd.buffer, touch_cmd6);
   cmd.buf_used = sizeof(touch_cmd6) - 1;
   ascii_parse_cmd(&cmd, NULL);
-  //assert_int_equal(ASCII_ERROR, cmd.state);
+  // assert_int_equal(ASCII_ERROR, cmd.state);
 
   reset_cmd_handler(&cmd);
   strcpy(cmd.buffer, touch_cmd7);
   cmd.buf_used = sizeof(touch_cmd7) - 1;
   ascii_parse_cmd(&cmd, NULL);
-  //assert_int_equal(ASCII_ERROR, cmd.state);
+  // assert_int_equal(ASCII_ERROR, cmd.state);
 }
 
-void process_cmd_get(cmd_handler* cmd, ed_writer* writer)
+void
+process_cmd_get(cmd_handler *cmd, ed_writer *writer)
 {
   // do nothing for now
   printf("process_cmd_get called\n");
 }
 
-void writer_init(ed_writer* writer, size_t size) {}
-bool writer_reserve(ed_writer* writer, size_t nbyte) { return true;}
-bool writer_append(ed_writer* writer, const void* buf, size_t nbyte) { return true;}
-bool writer_flush(ed_writer* writer, int fd) { return true;}
+void
+writer_init(ed_writer *writer, size_t size)
+{
+}
+bool
+writer_reserve(ed_writer *writer, size_t nbyte)
+{
+  return true;
+}
+bool
+writer_append(ed_writer *writer, const void *buf, size_t nbyte)
+{
+  return true;
+}
+bool
+writer_flush(ed_writer *writer, int fd)
+{
+  return true;
+}
 
 static void
-test_cmd_parse_get(void** context)
+test_cmd_parse_get(void **context)
 {
   char buf1[] = "012 456 890\r\n";
   cmd_handler cmd = {};
@@ -914,24 +930,24 @@ test_cmd_parse_get(void** context)
   assert_int_equal(CMD_CLEAN, cmd.state);
 }
 
-int main(void)
+int
+main(void)
 {
-  const struct CMUnitTest cmd_parser_tests[] =
-    {
-      cmocka_unit_test(test_parse_uint),
-      cmocka_unit_test(test_parse_ascii_value),
-      cmocka_unit_test(test_ascii_cpbuf),
-      cmocka_unit_test(test_ascii_parse_cmd_set),
-      cmocka_unit_test(test_ascii_parse_cmd_add),
-      cmocka_unit_test(test_ascii_parse_cmd_replace),
-      cmocka_unit_test(test_ascii_parse_cmd_append),
-      cmocka_unit_test(test_ascii_parse_cmd_prepend),
-      cmocka_unit_test(test_ascii_parse_cmd_cas),
-      cmocka_unit_test(test_ascii_parse_cmd_delete),
-      cmocka_unit_test(test_ascii_parse_cmd_incr),
-      cmocka_unit_test(test_ascii_parse_cmd_decr),
-      cmocka_unit_test(test_ascii_parse_cmd_touch),
-      cmocka_unit_test(test_cmd_parse_get),
-    };
+  const struct CMUnitTest cmd_parser_tests[] = {
+    cmocka_unit_test(test_parse_uint),
+    cmocka_unit_test(test_parse_ascii_value),
+    cmocka_unit_test(test_ascii_cpbuf),
+    cmocka_unit_test(test_ascii_parse_cmd_set),
+    cmocka_unit_test(test_ascii_parse_cmd_add),
+    cmocka_unit_test(test_ascii_parse_cmd_replace),
+    cmocka_unit_test(test_ascii_parse_cmd_append),
+    cmocka_unit_test(test_ascii_parse_cmd_prepend),
+    cmocka_unit_test(test_ascii_parse_cmd_cas),
+    cmocka_unit_test(test_ascii_parse_cmd_delete),
+    cmocka_unit_test(test_ascii_parse_cmd_incr),
+    cmocka_unit_test(test_ascii_parse_cmd_decr),
+    cmocka_unit_test(test_ascii_parse_cmd_touch),
+    cmocka_unit_test(test_cmd_parse_get),
+  };
   return cmocka_run_group_tests(cmd_parser_tests, NULL, NULL);
 }

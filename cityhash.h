@@ -1,12 +1,12 @@
-// Copyright (c) 2017 Felix Chern (Add extern "C" to make it compatible with C and C++)
-// Copyright (c) 2015 Jason Schulz (Rewritten in C)
-// Copyright (c) 2011 Google, Inc.
+// Copyright (c) 2017 Felix Chern (Add extern "C" to make it compatible with C
+// and C++) Copyright (c) 2015 Jason Schulz (Rewritten in C) Copyright (c) 2011
+// Google, Inc.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
+// of this software and associated documentation files (the "Software"), to
+// deal in the Software without restriction, including without limitation the
+// rights to use, copy, modify, merge, publish, distribute, sublicense, and/or
+// sell copies of the Software, and to permit persons to whom the Software is
 // furnished to do so, subject to the following conditions:
 //
 // The above copyright notice and this permission notice shall be included in
@@ -16,9 +16,9 @@
 // IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 // FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
 // AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-// THE SOFTWARE.
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+// FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
+// IN THE SOFTWARE.
 //
 // CityHash, by Geoff Pike and Jyrki Alakuijala
 //
@@ -52,10 +52,10 @@
 // measurements and so on.
 //
 // WARNING: This code has been only lightly tested on big-endian platforms!
-// It is known to work well on little-endian platforms that have a small penalty
-// for unaligned reads, such as current Intel and AMD moderate-to-high-end CPUs.
-// It should work on all 32-bit and 64-bit platforms that allow unaligned reads;
-// bug reports are welcome.
+// It is known to work well on little-endian platforms that have a small
+// penalty for unaligned reads, such as current Intel and AMD
+// moderate-to-high-end CPUs. It should work on all 32-bit and 64-bit platforms
+// that allow unaligned reads; bug reports are welcome.
 //
 // By the way, for some hash functions, given strings a and b, the hash
 // of a+b is easily derived from the hashes of a and b.  This property
@@ -64,39 +64,41 @@
 #ifndef C_CITYHASH_H
 #define C_CITYHASH_H
 
-#include <stdlib.h>
-#include <stdint.h>
 #include "largeint.h"
+#include <stdint.h>
+#include <stdlib.h>
 
 #if defined(__cplusplus)
 extern "C" {
 #endif
 
 // hash function for a byte array
-uint64_t cityhash64(const uint8_t* buf, size_t len);
+uint64_t cityhash64 (const uint8_t *buf, size_t len);
 
 // hash function for a byte array, for convenience a 64-bit seed is also
 // hashed into the result
-uint64_t cityhash64_with_seed(const uint8_t* buf, size_t len, uint64_t seed);
+uint64_t cityhash64_with_seed (const uint8_t *buf, size_t len, uint64_t seed);
 
 // hash function for a byte array, for convenience two seeds are also
 // hashed into the result
-uint64_t cityhash64_with_seeds(const uint8_t* buf, size_t len, uint64_t seed0,
-                               uint64_t seed1);
+uint64_t cityhash64_with_seeds (const uint8_t *buf, size_t len, uint64_t seed0,
+                                uint64_t seed1);
 
 // hash function for a byte array
-uint128_t cityhash128(const uint8_t* s, size_t len);
+uint128_t cityhash128 (const uint8_t *s, size_t len);
 
 // hash function for a byte array, for convenience a 128-bit seed is also
 // hashed into the result
-uint128_t cityhash128_with_seed(const uint8_t* s, size_t len, uint128_t seed);
+uint128_t cityhash128_with_seed (const uint8_t *s, size_t len, uint128_t seed);
 
 // hash function for a byte array, most useful in 32-bit binaries
-uint32_t cityhash32(const uint8_t* buf, size_t len);
+uint32_t cityhash32 (const uint8_t *buf, size_t len);
 
 // hash 128 input bits down to 64 bits of output
 // this is intended to be a reasonably good hash function
-static inline uint64_t hash_128_to_64(const uint128_t x) {
+static inline uint64_t
+hash_128_to_64 (const uint128_t x)
+{
 
   // murmur-inspired hashing.
   const uint64_t kmul = 0x9ddfea08eb382d69; // 11376068507788127593
@@ -119,15 +121,15 @@ static inline uint64_t hash_128_to_64(const uint128_t x) {
 #if defined(__SSE4_2__) && defined(__x86_64)
 
 // hash function for a byte array
-uint128_t cityhash128_crc(const uint8_t* s, size_t len);
+uint128_t cityhash128_crc (const uint8_t *s, size_t len);
 
 // hash function for a byte array, for convenience a 128-bit seed is also
 // hashed into the result
-uint128_t cityhash128_crc_with_seed(const uint8_t* s, size_t len,
-                                    uint128_t seed);
+uint128_t cityhash128_crc_with_seed (const uint8_t *s, size_t len,
+                                     uint128_t seed);
 
 // hash function for a byte array
-uint256_t cityhash256_crc(const uint8_t* s, size_t len);
+uint256_t cityhash256_crc (const uint8_t *s, size_t len);
 
 #endif
 

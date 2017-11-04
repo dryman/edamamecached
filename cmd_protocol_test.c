@@ -1,15 +1,15 @@
+#include <setjmp.h>
 #include <stdarg.h>
 #include <stddef.h>
-#include <setjmp.h>
 #include <stdint.h>
-#include <sys/mman.h>
 #include <string.h>
+#include <sys/mman.h>
 #include <cmocka.h>
 
 #include "cmd_protocol.h"
 
 static void
-test_sizes(void** context)
+test_sizes(void **context)
 {
   assert_int_equal(1, sizeof(cmd_opcode));
   assert_int_equal(2, sizeof(cmd_rescode));
@@ -18,7 +18,7 @@ test_sizes(void** context)
 }
 
 static void
-test_req_endianess(void** context)
+test_req_endianess(void **context)
 {
   cmd_req_header req;
   req.keylen = 0xaabb;
@@ -40,7 +40,7 @@ test_req_endianess(void** context)
 }
 
 static void
-test_res_endianess(void** context)
+test_res_endianess(void **context)
 {
   cmd_res_header res;
   res.keylen = 0xaabb;
@@ -61,13 +61,12 @@ test_res_endianess(void** context)
 #endif
 }
 
-int main(void)
+int
+main(void)
 {
-  const struct CMUnitTest cmd_protocol_tests[] =
-    {
-      cmocka_unit_test(test_sizes),
-      cmocka_unit_test(test_req_endianess),
-      cmocka_unit_test(test_res_endianess),
-    };
+  const struct CMUnitTest cmd_protocol_tests[] = {
+    cmocka_unit_test(test_sizes), cmocka_unit_test(test_req_endianess),
+    cmocka_unit_test(test_res_endianess),
+  };
   return cmocka_run_group_tests(cmd_protocol_tests, NULL, NULL);
 }

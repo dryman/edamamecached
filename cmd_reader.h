@@ -3,6 +3,6 @@
 
 #include "writer.h"
 
-void edamame_read(cmd_handler* cmd, int nbyte, char* data, ed_writer* writer);
+void edamame_read (cmd_handler *cmd, int nbyte, char *data, ed_writer *writer);
 
 #endif

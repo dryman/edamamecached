@@ -1,19 +1,19 @@
-#include <stdio.h>
+#include "lru.h"
+#include <limits.h>
+#include <setjmp.h>
 #include <stdarg.h>
 #include <stddef.h>
-#include <setjmp.h>
 #include <stdint.h>
-#include <sys/mman.h>
+#include <stdio.h>
 #include <string.h>
-#include <cmocka.h>
+#include <sys/mman.h>
 #include <urcu.h>
-#include <limits.h>
-#include "lru.h"
+#include <cmocka.h>
 
 static void
-test_init_cleanup(void** context)
+test_init_cleanup(void **context)
 {
-  lru_t* lru;
+  lru_t *lru;
   lru = lru_init(100, 0, 24);
   assert_int_equal(8, lru->inline_keylen);
   assert_int_equal(24, lru->inline_vallen);
@@ -29,9 +29,9 @@ test_init_cleanup(void** context)
 }
 
 static void
-test_insert_update(void** context)
+test_insert_update(void **context)
 {
-  lru_t* lru;
+  lru_t *lru;
   cmd_handler cmd;
   lru_val_t lru_val;
   lru = lru_init(100, 8, 8);
@@ -115,9 +115,9 @@ test_insert_update(void** context)
 }
 
 static void
-test_numeric_val(void** context)
+test_numeric_val(void **context)
 {
-  lru_t* lru;
+  lru_t *lru;
   cmd_handler cmd;
   lru_val_t lru_val;
   lru = lru_init(100, 8, 8);
@@ -152,7 +152,7 @@ test_numeric_val(void** context)
   assert_int_equal(0, lru->ninline_keylen);
   assert_int_equal(0, lru->ninline_vallen);
   assert_int_equal(10, lru_val.vallen);
-  
+
   cmd.req.op = PROTOCOL_BINARY_CMD_GET;
   assert_true(lru_get(lru, &cmd, &lru_val));
   assert_int_equal(STATUS_NOERROR, lru_val.errcode);
@@ -210,22 +210,18 @@ test_numeric_val(void** context)
   free(lru);
 }
 
-static void
-test_add_replace(void** context);
+static void test_add_replace(void **context);
 
-static void
-test_append_prepend(void** context);
+static void test_append_prepend(void **context);
 
-static void
-test_lru_full(void** context);
+static void test_lru_full(void **context);
 
-int main(void)
+int
+main(void)
 {
-  const struct CMUnitTest lru_tests[] =
-    {
-      cmocka_unit_test(test_init_cleanup),
-      cmocka_unit_test(test_insert_update),
-      cmocka_unit_test(test_numeric_val),
-    };
+  const struct CMUnitTest lru_tests[] = {
+    cmocka_unit_test(test_init_cleanup), cmocka_unit_test(test_insert_update),
+    cmocka_unit_test(test_numeric_val),
+  };
   return cmocka_run_group_tests(lru_tests, NULL, NULL);
 }
