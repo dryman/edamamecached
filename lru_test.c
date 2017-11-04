@@ -210,6 +210,15 @@ test_numeric_val(void** context)
   free(lru);
 }
 
+static void
+test_add_replace(void** context);
+
+static void
+test_append_prepend(void** context);
+
+static void
+test_lru_full(void** context);
+
 int main(void)
 {
   const struct CMUnitTest lru_tests[] =

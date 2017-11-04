@@ -16,6 +16,7 @@ struct inner_bucket
 {
   bool is_numeric_val;
   uint16_t flags;
+  uint16_t probe;
   time_t epoch;
   uint64_t cas;
   size_t keylen;
@@ -370,6 +371,7 @@ check_magic:
               if (!atomic_compare_exchange_strong(&bucket->magic, &magic, new_magic))
                 goto check_magic;
               lru_write_empty_bucket(lru, bucket, cmd, lru_val);
+              bucket->ibucket.probe = probe;
               atomic_store_explicit(&bucket->magic, 1, memory_order_release);
               atomic_fetch_add_explicit(&lru->probe_stats[probe], 1,
                                         memory_order_relaxed);
@@ -383,27 +385,42 @@ check_magic:
                   memory_order_release, memory_order_relaxed));
               return true;
             }
+          // Reading key on each probe need to be protected
+          // by the rcu read lock.
+          rcu_read_lock();
           if (bucket->ibucket.keylen != keylen)
-            goto next_iter;
+            {
+              rcu_read_unlock();
+              goto next_iter;
+            }
           keyptr = keylen > inline_keylen ?
            *(void**)&bucket->ibucket.data :
            &bucket->ibucket.data;
           if (!memeq(keyptr, cmd->key, keylen))
-            goto next_iter;
+            {
+              rcu_read_unlock();
+              goto next_iter;
+            }
+          // accessing key finished, now we free the rcu
+          // read lock.
+          rcu_read_unlock();
           if (cmd->req.op == PROTOCOL_BINARY_CMD_ADD ||
-              cmd->req.op == PROTOCOL_BINARY_CMD_ADDQ) {
-            lru_val->errcode = STATUS_ITEM_NOT_STORED;
-            return false;
-          }
+              cmd->req.op == PROTOCOL_BINARY_CMD_ADDQ)
+            {
+              lru_val->errcode = STATUS_ITEM_NOT_STORED;
+              return false;
+            }
           uint8_t tmp_idx;
           ibucket = alloc_tmpbucket(lru, &tmp_idx);
-          new_magic = magic | (tmp_idx << 2);
-          if (!atomic_compare_exchange_strong(&bucket->magic, &magic, new_magic))
+          memcpy(ibucket, &bucket->ibucket, ibucket_size);
+          if (!atomic_compare_exchange_strong_explicit(
+              &bucket->magic, &magic, (tmp_idx << 2) | 0x3,
+              memory_order_acq_rel,
+              memory_order_acquire))
             {
               free_tmpbucket(lru, tmp_idx);
               goto check_magic;
             }
-          memcpy(ibucket, &bucket->ibucket, ibucket_size);
           synchronize_rcu();
           ret = lru_update_bucket(lru, bucket, cmd, lru_val);
           atomic_store_explicit(&bucket->magic, 1, memory_order_release);
@@ -418,6 +435,7 @@ next_iter:
           probe++;
         }
     }
+  lru_val->errcode = STATUS_BUSY;
   return false;
 }
 
@@ -748,47 +766,132 @@ bool lru_update_bucket(lru_t* lru, struct bucket* bucket, cmd_handler* cmd, lru_
   return false;
 }
 
-/*
-void lru_delete(lru_t* lru, void* key, size_t keylen)
+void lru_delete(lru_t* lru, cmd_handler* cmd)
 {
-}
+  size_t inline_keylen, inline_vallen, keylen, vallen, ibucket_size, bucket_size;
+  uint64_t capacity, hashed_key, probing_key, mask, up32key,
+           idx, idx_next;
+  uint32_t longest_probes;
+  uint8_t* buckets, magic;
+  struct bucket* bucket;
+  void *keyptr;
 
-uint32_t find_probe_len(lru_t lru, idx)
-{
-  hashed_key = hasher(&buckets[idx*bucket_size + 1], keysize);
+  inline_keylen = lru->inline_keylen;
+  inline_vallen = lru->inline_vallen;
+  keylen = cmd->req.keylen;
+  bucket_size = sizeof(struct bucket) + inline_keylen + inline_vallen;
+  ibucket_size = sizeof(struct inner_bucket) + inline_keylen + inline_vallen;
+  longest_probes = atomic_load_explicit(&lru->longest_probes,
+                                        memory_order_acquire);
+  buckets = lru->buckets;
+
+  capacity = lru_capacity(lru->capacity_clz, lru->capacity_ms4b);
+  mask = (1ULL << (64 - lru->capacity_clz)) - 1;
+  hashed_key = cityhash64((uint8_t*)cmd->key, keylen);
+  up32key = hashed_key >> 32;
+
   probing_key = hashed_key;
-
-  for (int i = 0; i <= table->longest_probes; i++)
+  idx = fast_mod_scale(probing_key, mask, lru->capacity_ms4b);
+  probing_key += up32key;
+  idx_next = fast_mod_scale(probing_key, mask, lru->capacity_ms4b);
+  for (int probe = 0; probe <= longest_probes; probe++)
     {
-      probing_key = quadratic_partial(probing_key, i);
-      probing_idx = fast_mod_scale(probing_key, mask, table->capacity_ms4b);
-      if (probing_idx == idx)
-        return i;
-    }
-  OP_LOG_ERROR(logger, "Didn't find any match probe!\n");
+      int i = 0;
+      __builtin_prefetch(&buckets[idx_next * bucket_size], 0, 0);
+      while (true)
+        {
+          bucket = (struct bucket*)&buckets[idx * bucket_size];
+check_magic:
+          magic = atomic_load_explicit(&bucket->magic, memory_order_acquire);
 
+          if (magic == 0)
+            return;
+          if (magic == 2)
+            goto next_iter;
+          if (magic == 0x80 || magic == 0x82 || (magic & 0x3) == 0x3)
+            goto check_magic;
+          if (bucket->ibucket.keylen != keylen)
+            {
+              goto next_iter;
+            }
+          rcu_read_lock();
+          keyptr = keylen > inline_keylen ?
+           *(void**)&bucket->ibucket.data :
+           &bucket->ibucket.data;
+          if (!memeq(keyptr, cmd->key, keylen))
+            {
+              goto next_iter;
+            }
+          rcu_read_unlock();
+          atomic_store_explicit(&bucket->magic, 0x82, memory_order_release);
+          synchronize_rcu();
+          keylen = bucket->ibucket.keylen;
+          vallen = bucket->ibucket.vallen;
+          probe = bucket->ibucket.probe;
+          atomic_fetch_sub_explicit(&lru->probe_stats[probe], 1,
+                                    memory_order_relaxed);
+          if (keylen > inline_keylen) {
+            free(*((void**)&bucket->ibucket.data[0]));
+          }
+          if (!bucket->ibucket.is_numeric_val && vallen > inline_vallen) {
+            free(*(void**)&bucket->ibucket.data[inline_keylen]);
+          }
+
+          atomic_store_explicit(&bucket->magic, 2, memory_order_release);
+          return;
+next_iter:
+          if (++i == 4) break;
+          idx++;
+          if (idx >= capacity)
+            idx = 0;
+          probe++;
+        }
+      idx = idx_next;
+      probing_key += up32key;
+      idx_next = fast_mod_scale(probing_key, mask, lru->capacity_ms4b);
+    }
 }
 
 void lru_delete_idx(lru_t* lru, unsigned int idx)
 {
-  bucket = (struct bucket*)&buckets[idx * bucket_size];
-  do {
-    magic = atomic_load_explicit(&bucket->magic, memory_order_acquire);
-  } while (magic == 0x80 || magic == 0x82 || magic & 0x3 == 0x3);
+  size_t inline_keylen, inline_vallen, keylen, vallen, ibucket_size, bucket_size;
+  uint16_t probe;
+  uint8_t* buckets, magic;
+  struct bucket* bucket;
 
-  if (magic == 0 || magic == 2)
-    return;
+  inline_keylen = lru->inline_keylen;
+  inline_vallen = lru->inline_vallen;
+  bucket_size = sizeof(struct bucket) + inline_keylen + inline_vallen;
+  ibucket_size = sizeof(struct inner_bucket) + inline_keylen + inline_vallen;
+  buckets = lru->buckets;
+
+  bucket = (struct bucket*)&buckets[idx * bucket_size];
+
+reload_magic:
+  magic = atomic_load_explicit(&bucket->magic, memory_order_acquire);
+  do {
+    if (magic == 0 || magic == 2)
+      return;
+    if (magic == 0x80 || magic == 0x82 || (magic & 0x3) == 0x3)
+      goto reload_magic;
+  } while (!atomic_compare_exchange_strong_explicit(
+      &bucket->magic, &magic, 0x82,
+      memory_order_acq_rel,
+      memory_order_acquire));
+
+  // drain the access to this bucket
+  synchronize_rcu();
   keylen = bucket->ibucket.keylen;
   vallen = bucket->ibucket.vallen;
-  keyptr = keylen > inline_keylen ? *(void**)&bucket->ibucket.data : NULL;
-  valptr = vallen > inline_vallen ?
-   *(void**)&bucket->ibucket.data[inline_keylen] : NULL;
-  atomic_store_explicit(&bucket->magic, 0, memory_order_release);
-  synchronize_rcu();
-  if (keyptr)
-    free(keyptr);
-  if (valptr)
-    free(valptr);
-  // TODO find its probe length and update probe stat
+  probe = bucket->ibucket.probe;
+  atomic_fetch_sub_explicit(&lru->probe_stats[probe], 1,
+                            memory_order_relaxed);
+  if (keylen > inline_keylen) {
+    free(*((void**)&bucket->ibucket.data[0]));
+  }
+  if (!bucket->ibucket.is_numeric_val && vallen > inline_vallen) {
+    free(*(void**)&bucket->ibucket.data[inline_keylen]);
+  }
+
+  atomic_store_explicit(&bucket->magic, 2, memory_order_release);
 }
-*/

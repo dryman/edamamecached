@@ -10,7 +10,6 @@ typedef struct lru_val_t lru_val_t;
 typedef struct scavenger_t scavenger_t;
 
 #define PROBE_STATS_SIZE 512
-// Need to record the probe stats!
 
 struct lru_t
 {
