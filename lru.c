@@ -1017,6 +1017,12 @@ pq_cmp(const void *_a, const void *_b)
 }
 
 void
+pq_sort(swiper_t *swiper)
+{
+  qsort(swiper->pqueue, swiper->pqueue_used, sizeof(uint64_t[2]), pq_cmp);
+}
+
+void
 pq_add(swiper_t *swiper, uint64_t idx, uint64_t txid)
 {
   uint64_t pq_idx, pq_idx_parent;
@@ -1122,7 +1128,7 @@ lru_swipe(swiper_t *swiper)
   if (objcnt > threshold)
     {
       num_to_del = objcnt - threshold;
-      qsort(swiper->pqueue, swiper->pqueue_size, sizeof(uint64_t[2]), pq_cmp);
+      pq_sort(swiper);
       for (num_deleted = 0, pq_idx = 0;
            num_deleted < num_to_del && pq_idx < swiper->pqueue_size; pq_idx++)
         {
