@@ -29,11 +29,14 @@ struct bucket
   struct inner_bucket ibucket;
 } __attribute__((packed));
 
-struct scavenger_t
+struct swiper_t
 {
   lru_t *lru;
-  unsigned int iter;
-  unsigned int prio_queue[0];
+  uint32_t pqueue_size;
+  uint32_t pqueue_used;
+  // pqueue[x][0] is idx of the bucket
+  // pqueue[x][1] is txid
+  uint64_t pqueue[0][2];
 };
 
 void lru_write_empty_bucket(lru_t *lru, struct bucket *bucket,
@@ -78,6 +81,17 @@ lru_init(uint64_t num_objects, size_t inline_keylen, size_t inline_vallen)
   lru->txid = 1;
 
   return lru;
+}
+
+swiper_t *
+swiper_init(lru_t *lru, uint32_t pq_size)
+{
+  size_t swiper_size;
+  swiper_size = sizeof(swiper_t) + pq_size * sizeof(uint64_t[2]);
+  swiper_t *swiper = calloc(1, swiper_size);
+  swiper->lru = lru;
+  swiper->pqueue_size = pq_size;
+  return swiper;
 }
 
 void
@@ -937,29 +951,26 @@ lru_delete(lru_t *lru, cmd_handler *cmd)
     }
 }
 
-void
-lru_delete_idx(lru_t *lru, unsigned int idx)
+bool
+lru_delete_bucket(lru_t *lru, struct bucket *bucket, uint64_t txid)
 {
-  size_t inline_keylen, inline_vallen, keylen, vallen, ibucket_size,
-      bucket_size;
+  size_t inline_keylen, inline_vallen, keylen, vallen;
   uint16_t probe;
-  uint8_t *buckets, magic;
-  struct bucket *bucket;
+  uint8_t magic;
 
   inline_keylen = lru->inline_keylen;
   inline_vallen = lru->inline_vallen;
-  bucket_size = sizeof(struct bucket) + inline_keylen + inline_vallen;
-  ibucket_size = sizeof(struct inner_bucket) + inline_keylen + inline_vallen;
-  buckets = lru->buckets;
-
-  bucket = (struct bucket *)&buckets[idx * bucket_size];
 
 reload_magic:
   magic = atomic_load_explicit(&bucket->magic, memory_order_acquire);
   do
     {
+      // If the bucket was touched by other thread, do not delete the
+      // bucket.
+      if (bucket->txid > txid)
+        return false;
       if (magic == 0 || magic == 2)
-        return;
+        return false;
       if (magic == 0x80 || magic == 0x82 || (magic & 0x3) == 0x3)
         goto reload_magic;
     }
@@ -967,7 +978,7 @@ reload_magic:
                                                   memory_order_acq_rel,
                                                   memory_order_acquire));
 
-  // drain the access to this bucket
+  // drain readers accessing this bucket
   synchronize_rcu();
   keylen = bucket->ibucket.keylen;
   vallen = bucket->ibucket.vallen;
@@ -983,4 +994,163 @@ reload_magic:
     }
 
   atomic_store_explicit(&bucket->magic, 2, memory_order_release);
+  return true;
+}
+
+void pq_swap(uint64_t (*a)[2], uint64_t (*b)[2])
+{
+  uint64_t tmp;
+  tmp = (*a)[0];
+  (*a)[0] = (*b)[0];
+  (*b)[0] = tmp;
+  tmp = (*a)[1];
+  (*a)[1] = (*b)[1];
+  (*b)[1] = tmp;
+}
+
+int
+pq_cmp(const void *_a, const void *_b)
+{
+  const int64_t(*a)[2] = _a;
+  const int64_t(*b)[2] = _b;
+  return (*a)[1] - (*b)[1];
+}
+
+void
+pq_add(swiper_t *swiper, uint64_t idx, uint64_t txid)
+{
+  uint64_t pq_idx, pq_idx_parent;
+
+  pq_idx = swiper->pqueue_used++;
+  swiper->pqueue[pq_idx][0] = idx;
+  swiper->pqueue[pq_idx][1] = txid;
+  for (; pq_idx > 1; pq_idx /= 2)
+    {
+      pq_idx_parent = pq_idx / 2;
+      if (swiper->pqueue[pq_idx_parent][1] < swiper->pqueue[pq_idx][1])
+        {
+          pq_swap(&swiper->pqueue[pq_idx_parent], &swiper->pqueue[pq_idx]);
+        }
+      else
+        break;
+    }
+}
+
+void
+pq_pop_add(swiper_t *swiper, uint64_t idx, uint64_t txid)
+{
+  uint64_t pq_idx, pq_idx_l, pq_idx_r, max_idx;
+  pq_idx = 0;
+  swiper->pqueue[pq_idx][0] = idx;
+  swiper->pqueue[pq_idx][1] = txid;
+  while (pq_idx < swiper->pqueue_size)
+    {
+      pq_idx_l = pq_idx * 2 - 1;
+      pq_idx_r = pq_idx * 2;
+      max_idx = pq_idx;
+      if (pq_idx_l < swiper->pqueue_size
+          && swiper->pqueue[pq_idx_l][1] > swiper->pqueue[max_idx][1])
+        max_idx = pq_idx_l;
+      if (pq_idx_r < swiper->pqueue_size
+          && swiper->pqueue[pq_idx_r][1] > swiper->pqueue[max_idx][1])
+        max_idx = pq_idx_r;
+      if (max_idx != pq_idx)
+        {
+          pq_swap(&swiper->pqueue[pq_idx], &swiper->pqueue[max_idx]);
+          pq_idx = max_idx;
+        }
+    }
+}
+
+// This method can only be executed by a single thread.
+void
+lru_swipe(swiper_t *swiper)
+{
+  lru_t *lru;
+  size_t inline_keylen, inline_vallen, ibucket_size, bucket_size;
+  uint64_t idx, capacity, txid, pq_idx, threshold, num_to_del, num_deleted,
+      objcnt;
+  unsigned int longest_probes, new_lp;
+  time_t now, epoch;
+  uint8_t *buckets;
+  struct bucket *bucket;
+  uint8_t magic;
+
+  lru = swiper->lru;
+  capacity = lru_capacity(lru->capacity_clz, lru->capacity_ms4b);
+  threshold = capacity * 7 / 10;
+  inline_keylen = lru->inline_keylen;
+  inline_vallen = lru->inline_vallen;
+  bucket_size = sizeof(struct bucket) + inline_keylen + inline_vallen;
+  ibucket_size = sizeof(struct inner_bucket) + inline_keylen + inline_vallen;
+  now = time(NULL);
+  buckets = lru->buckets;
+
+  // O(N * log(k)). k = priority queue size
+  // Scan through the lru table and delete items with outdated epoch.
+  // Enqueue idx and txid into the priority queue. When the priority
+  // queue is full, pop the max item in the queue so that we get a
+  // set of indexes which has the smallest txids.
+  for (idx = 0; idx < capacity; idx++)
+    {
+      rcu_read_lock();
+      bucket = (struct bucket *)&buckets[idx * bucket_size];
+      magic = atomic_load_explicit(&bucket->magic, memory_order_acquire);
+      // we only delete old enough items
+      // items in update state, insert state, empty state or detele state
+      // can all be ignored.
+      if (magic != 1)
+        continue;
+      epoch = bucket->ibucket.epoch;
+      txid = bucket->txid;
+      rcu_read_unlock();
+
+      if (epoch > now)
+        {
+          lru_delete_bucket(lru, bucket, UINT64_MAX);
+        }
+      else
+        {
+          if (swiper->pqueue_used <= swiper->pqueue_size)
+            pq_add(swiper, idx, txid);
+          else
+            pq_pop_add(swiper, idx, txid);
+        }
+    }
+
+  objcnt = atomic_load_explicit(&lru->objcnt, memory_order_relaxed);
+  if (objcnt > threshold)
+    {
+      num_to_del = objcnt - threshold;
+      qsort(swiper->pqueue, swiper->pqueue_size, sizeof(uint64_t[2]), pq_cmp);
+      for (num_deleted = 0, pq_idx = 0;
+           num_deleted < num_to_del && pq_idx < swiper->pqueue_size; pq_idx++)
+        {
+          bucket = (struct bucket
+                        *)&buckets[swiper->pqueue[pq_idx][0] * bucket_size];
+          if (lru_delete_bucket(lru, bucket, swiper->pqueue[pq_idx][1]))
+            num_deleted++;
+        }
+    }
+  swiper->pqueue_used = 0;
+
+  // update the longest probe. longest probe can only be decreased
+  // by this thread, this method, so we won't have the aba problem
+  longest_probes
+      = atomic_load_explicit(&lru->longest_probes, memory_order_acquire);
+  do
+    {
+      new_lp = 0;
+      for (idx = 0; idx < PROBE_STATS_SIZE; idx++)
+        {
+          if (atomic_load_explicit(&lru->probe_stats[idx],
+                                   memory_order_relaxed))
+            new_lp = idx;
+        }
+      if (new_lp >= longest_probes)
+        break;
+    }
+  while (atomic_compare_exchange_strong_explicit(
+      &lru->longest_probes, &longest_probes, new_lp, memory_order_release,
+      memory_order_acquire));
 }
