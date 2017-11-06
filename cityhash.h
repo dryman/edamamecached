@@ -1,6 +1,7 @@
 // Copyright (c) 2017 Felix Chern (Add extern "C" to make it compatible with C
-// and C++) Copyright (c) 2015 Jason Schulz (Rewritten in C) Copyright (c) 2011
-// Google, Inc.
+// and C++)
+// Copyright (c) 2015 Jason Schulz (Rewritten in C)
+// Copyright (c) 2011 Google, Inc. Geoff Pike and Jyrki Alakuijala
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to
