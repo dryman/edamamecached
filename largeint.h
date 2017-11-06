@@ -12,18 +12,18 @@ struct uint128_t
 typedef struct uint128_t uint128_t;
 
 static inline uint64_t
-uint128_t_low64 (const uint128_t x)
+uint128_t_low64(const uint128_t x)
 {
   return x.a;
 }
 static inline uint64_t
-uint128_t_high64 (const uint128_t x)
+uint128_t_high64(const uint128_t x)
 {
   return x.b;
 }
 
 static inline uint128_t
-make_uint128_t (uint64_t lo, uint64_t hi)
+make_uint128_t(uint64_t lo, uint64_t hi)
 {
   uint128_t x = { lo, hi };
   return x;

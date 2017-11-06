@@ -15,7 +15,7 @@
 
 #ifndef htonll
 #if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
-#define htonll(bytes) __builtin_bswap64 (bytes)
+#define htonll(bytes) __builtin_bswap64(bytes)
 #else
 #define htonll(bytes) (bytes)
 #endif
@@ -23,14 +23,14 @@
 
 #ifndef ntohll
 #if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
-#define ntohll(bytes) __builtin_bswap64 (bytes)
+#define ntohll(bytes) __builtin_bswap64(bytes)
 #else
 #define ntohll(bytes) (bytes)
 #endif
 #endif // ntohll
 
 static inline bool
-memeq (const void *ptr1, const void *ptr2, size_t num)
+memeq(const void *ptr1, const void *ptr2, size_t num)
 {
   uintptr_t p1, p2;
   p1 = (uintptr_t)ptr1;
@@ -39,20 +39,20 @@ memeq (const void *ptr1, const void *ptr2, size_t num)
 #ifdef __SSE4_1__
   for (; num >= 16; num -= 16, p1 += 16, p2 += 16)
     {
-      __m128i d1 = _mm_lddqu_si128 ((void *)p1);
-      __m128i d2 = _mm_lddqu_si128 ((void *)p2);
-      __m128i cmp = _mm_cmpeq_epi64 (d1, d2);
-      int result = _mm_movemask_pd ((__m128d)cmp);
+      __m128i d1 = _mm_lddqu_si128((void *)p1);
+      __m128i d2 = _mm_lddqu_si128((void *)p2);
+      __m128i cmp = _mm_cmpeq_epi64(d1, d2);
+      int result = _mm_movemask_pd((__m128d)cmp);
       if (result != 0x3)
         return false;
     }
 #elif defined(__SSE2__)
   for (; num >= 16; num -= 16, p1 += 16, p2 += 16)
     {
-      __m128i d1 = _mm_loadu_si128 ((void *)p1);
-      __m128i d2 = _mm_loadu_si128 ((void *)p2);
-      __m128i cmp = _mm_cmpeq_epi32 (d1, d2);
-      int result = _mm_movemask_epi8 (cmp);
+      __m128i d1 = _mm_loadu_si128((void *)p1);
+      __m128i d2 = _mm_loadu_si128((void *)p2);
+      __m128i cmp = _mm_cmpeq_epi32(d1, d2);
+      int result = _mm_movemask_epi8(cmp);
       if (result != 0xFFFF)
         return false;
     }
@@ -163,7 +163,7 @@ memeq (const void *ptr1, const void *ptr2, size_t num)
 extern __thread int ed_errno;
 
 static inline bool
-ed_isspace (char chr)
+ed_isspace(char chr)
 {
   return chr == ' ' || chr == '\t' || chr == '\n' || chr == '\v' || chr == '\f'
          || chr == '\r';
@@ -171,8 +171,8 @@ ed_isspace (char chr)
 
 #define round_up_div(X, Y) ((X) + (Y)-1) / (Y)
 
-uint64_t strn2uint64 (const char *str, size_t n, char **stop);
-uint32_t strn2uint32 (const char *str, size_t n, char **stop);
-uint16_t strn2uint16 (const char *str, size_t n, char **stop);
+uint64_t strn2uint64(const char *str, size_t n, char **stop);
+uint32_t strn2uint32(const char *str, size_t n, char **stop);
+uint16_t strn2uint16(const char *str, size_t n, char **stop);
 
 #endif

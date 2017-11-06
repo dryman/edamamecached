@@ -73,31 +73,31 @@ extern "C" {
 #endif
 
 // hash function for a byte array
-uint64_t cityhash64 (const uint8_t *buf, size_t len);
+uint64_t cityhash64(const uint8_t *buf, size_t len);
 
 // hash function for a byte array, for convenience a 64-bit seed is also
 // hashed into the result
-uint64_t cityhash64_with_seed (const uint8_t *buf, size_t len, uint64_t seed);
+uint64_t cityhash64_with_seed(const uint8_t *buf, size_t len, uint64_t seed);
 
 // hash function for a byte array, for convenience two seeds are also
 // hashed into the result
-uint64_t cityhash64_with_seeds (const uint8_t *buf, size_t len, uint64_t seed0,
-                                uint64_t seed1);
+uint64_t cityhash64_with_seeds(const uint8_t *buf, size_t len, uint64_t seed0,
+                               uint64_t seed1);
 
 // hash function for a byte array
-uint128_t cityhash128 (const uint8_t *s, size_t len);
+uint128_t cityhash128(const uint8_t *s, size_t len);
 
 // hash function for a byte array, for convenience a 128-bit seed is also
 // hashed into the result
-uint128_t cityhash128_with_seed (const uint8_t *s, size_t len, uint128_t seed);
+uint128_t cityhash128_with_seed(const uint8_t *s, size_t len, uint128_t seed);
 
 // hash function for a byte array, most useful in 32-bit binaries
-uint32_t cityhash32 (const uint8_t *buf, size_t len);
+uint32_t cityhash32(const uint8_t *buf, size_t len);
 
 // hash 128 input bits down to 64 bits of output
 // this is intended to be a reasonably good hash function
 static inline uint64_t
-hash_128_to_64 (const uint128_t x)
+hash_128_to_64(const uint128_t x)
 {
 
   // murmur-inspired hashing.
@@ -121,15 +121,15 @@ hash_128_to_64 (const uint128_t x)
 #if defined(__SSE4_2__) && defined(__x86_64)
 
 // hash function for a byte array
-uint128_t cityhash128_crc (const uint8_t *s, size_t len);
+uint128_t cityhash128_crc(const uint8_t *s, size_t len);
 
 // hash function for a byte array, for convenience a 128-bit seed is also
 // hashed into the result
-uint128_t cityhash128_crc_with_seed (const uint8_t *s, size_t len,
-                                     uint128_t seed);
+uint128_t cityhash128_crc_with_seed(const uint8_t *s, size_t len,
+                                    uint128_t seed);
 
 // hash function for a byte array
-uint256_t cityhash256_crc (const uint8_t *s, size_t len);
+uint256_t cityhash256_crc(const uint8_t *s, size_t len);
 
 #endif
 

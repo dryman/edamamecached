@@ -2,9 +2,9 @@
 #define EDAMAME_LRU_H_ 1
 
 #include "cmd_parser.h"
+#include <inttypes.h>
 #include <stdatomic.h>
 #include <stdint.h>
-#include <inttypes.h>
 
 typedef struct lru_t lru_t;
 typedef struct lru_val_t lru_val_t;
@@ -46,12 +46,13 @@ struct lru_val_t
   uint16_t flags;
 };
 
-lru_t *lru_init (uint64_t num_objects, size_t inline_keylen,
-                 size_t inline_vallen);
-void lru_cleanup (lru_t *lru);
+lru_t *lru_init(uint64_t num_objects, size_t inline_keylen,
+                size_t inline_vallen);
+void lru_cleanup(lru_t *lru);
 uint64_t lru_capacity(lru_t *lru);
-bool lru_get (lru_t *lru, cmd_handler *cmd, lru_val_t *lru_val);
-bool lru_upsert (lru_t *lru, cmd_handler *cmd, lru_val_t *lru_val);
+bool lru_get(lru_t *lru, cmd_handler *cmd, lru_val_t *lru_val);
+bool lru_upsert(lru_t *lru, cmd_handler *cmd, lru_val_t *lru_val);
+void lru_delete(lru_t *lru, cmd_handler *cmd);
 
 struct swiper_t
 {
@@ -63,7 +64,7 @@ struct swiper_t
   uint64_t pqueue[0][2];
 };
 
-swiper_t * swiper_init(lru_t *lru, uint32_t pq_size);
+swiper_t *swiper_init(lru_t *lru, uint32_t pq_size);
 void pq_add(swiper_t *swiper, uint64_t idx, uint64_t txid);
 void pq_pop_add(swiper_t *swiper, uint64_t idx, uint64_t txid);
 void pq_sort(swiper_t *swiper);

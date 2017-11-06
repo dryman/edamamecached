@@ -10,8 +10,8 @@ typedef enum cmd_rescode cmd_rescode;
 typedef struct cmd_req_header cmd_req_header;
 typedef struct cmd_res_header cmd_res_header;
 
-void cmd_req_ntoh (cmd_req_header *req);
-void cmd_res_hton (cmd_res_header *res);
+void cmd_req_ntoh(cmd_req_header *req);
+void cmd_res_hton(cmd_res_header *res);
 
 /*
  * Multibytes value endianess rules:
@@ -38,7 +38,7 @@ enum cmd_rescode
   PROTOCOL_BINARY_RESPONSE_ENOMEM = 0x82,
   // force rescode to be 2 bytes
   PROTOCOL_BINARY_RESPONSE_RESERVED = 0xffff,
-} __attribute__ ((packed));
+} __attribute__((packed));
 
 enum cmd_opcode
 {
@@ -76,7 +76,7 @@ enum cmd_opcode
   PROTOCOL_BINARY_CMD_GATKQ = 0x24,
   // edamame specific
   PROTOCOL_BINARY_CMD_TOUCHQ = 0x1f,
-} __attribute__ ((packed));
+} __attribute__((packed));
 
 enum cmd_errcode
 {
@@ -145,6 +145,6 @@ union cmd_extra
   } numeric;
 };
 
-void get_errstr (const char **ptr, size_t *len, enum cmd_errcode code);
+void get_errstr(const char **ptr, size_t *len, enum cmd_errcode code);
 
 #endif

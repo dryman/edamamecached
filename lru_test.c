@@ -585,6 +585,155 @@ test_lru_full(void **context)
 static void
 test_lru_delete(void **context)
 {
+  lru_t *lru;
+  cmd_handler cmd;
+  lru_val_t lru_val;
+  lru = lru_init(100, 8, 8);
+
+  // short key, short value
+  cmd.state = ASCII_CMD_READY;
+  cmd.req.op = PROTOCOL_BINARY_CMD_SET;
+  memcpy(&cmd.buffer, "xyz", 3);
+  cmd.key = &cmd.buffer[0];
+  cmd.buf_used = 3;
+  cmd.req.keylen = 3;
+  cmd.req.cas = 0;
+  cmd.value_stored = 3;
+  cmd.value = "abc";
+  assert_true(lru_upsert(lru, &cmd, &lru_val));
+  assert_true(lru_get(lru, &cmd, &lru_val));
+  assert_int_equal(STATUS_NOERROR, lru_val.errcode);
+  assert_int_equal(1, lru->objcnt);
+  assert_int_equal(3, lru->inline_acc_keylen);
+  assert_int_equal(3, lru->inline_acc_vallen);
+  assert_int_equal(0, lru->ninline_keycnt);
+  assert_int_equal(0, lru->ninline_valcnt);
+  assert_int_equal(0, lru->ninline_keylen);
+  assert_int_equal(0, lru->ninline_vallen);
+
+  // delete short key, short value
+  lru_delete(lru, &cmd);
+  assert_false(lru_get(lru, &cmd, &lru_val));
+  assert_int_equal(STATUS_KEY_NOT_FOUND, lru_val.errcode);
+  assert_int_equal(0, lru->objcnt);
+  assert_int_equal(0, lru->inline_acc_keylen);
+  assert_int_equal(0, lru->inline_acc_vallen);
+  assert_int_equal(0, lru->ninline_keycnt);
+  assert_int_equal(0, lru->ninline_valcnt);
+  assert_int_equal(0, lru->ninline_keylen);
+  assert_int_equal(0, lru->ninline_vallen);
+
+  // short key, long value
+  cmd.value_stored = 10;
+  cmd.value = "0123456789";
+  assert_true(lru_upsert(lru, &cmd, &lru_val));
+  assert_true(lru_get(lru, &cmd, &lru_val));
+  assert_int_equal(STATUS_NOERROR, lru_val.errcode);
+  assert_int_equal(1, lru->objcnt);
+  assert_int_equal(3, lru->inline_acc_keylen);
+  assert_int_equal(0, lru->inline_acc_vallen);
+  assert_int_equal(0, lru->ninline_keycnt);
+  assert_int_equal(1, lru->ninline_valcnt);
+  assert_int_equal(0, lru->ninline_keylen);
+  assert_int_equal(10, lru->ninline_vallen);
+
+  lru_delete(lru, &cmd);
+  assert_false(lru_get(lru, &cmd, &lru_val));
+  assert_int_equal(STATUS_KEY_NOT_FOUND, lru_val.errcode);
+  assert_int_equal(0, lru->objcnt);
+  assert_int_equal(0, lru->inline_acc_keylen);
+  assert_int_equal(0, lru->inline_acc_vallen);
+  assert_int_equal(0, lru->ninline_keycnt);
+  assert_int_equal(0, lru->ninline_valcnt);
+  assert_int_equal(0, lru->ninline_keylen);
+  assert_int_equal(0, lru->ninline_vallen);
+
+  // long key, long value
+  memcpy(&cmd.buffer, "0123456789", 10);
+  cmd.buf_used = 10;
+  cmd.req.keylen = 10;
+  assert_true(lru_upsert(lru, &cmd, &lru_val));
+  assert_true(lru_get(lru, &cmd, &lru_val));
+  assert_int_equal(STATUS_NOERROR, lru_val.errcode);
+  assert_int_equal(1, lru->objcnt);
+  assert_int_equal(0, lru->inline_acc_keylen);
+  assert_int_equal(0, lru->inline_acc_vallen);
+  assert_int_equal(1, lru->ninline_keycnt);
+  assert_int_equal(1, lru->ninline_valcnt);
+  assert_int_equal(10, lru->ninline_keylen);
+  assert_int_equal(10, lru->ninline_vallen);
+
+  lru_delete(lru, &cmd);
+  assert_false(lru_get(lru, &cmd, &lru_val));
+  assert_int_equal(STATUS_KEY_NOT_FOUND, lru_val.errcode);
+  assert_int_equal(0, lru->objcnt);
+  assert_int_equal(0, lru->inline_acc_keylen);
+  assert_int_equal(0, lru->inline_acc_vallen);
+  assert_int_equal(0, lru->ninline_keycnt);
+  assert_int_equal(0, lru->ninline_valcnt);
+  assert_int_equal(0, lru->ninline_keylen);
+  assert_int_equal(0, lru->ninline_vallen);
+
+  // long key, short value
+  cmd.value_stored = 3;
+  cmd.value = "abc";
+  assert_true(lru_upsert(lru, &cmd, &lru_val));
+  assert_true(lru_get(lru, &cmd, &lru_val));
+  assert_int_equal(STATUS_NOERROR, lru_val.errcode);
+  assert_int_equal(1, lru->objcnt);
+  assert_int_equal(0, lru->inline_acc_keylen);
+  assert_int_equal(3, lru->inline_acc_vallen);
+  assert_int_equal(1, lru->ninline_keycnt);
+  assert_int_equal(0, lru->ninline_valcnt);
+  assert_int_equal(10, lru->ninline_keylen);
+  assert_int_equal(0, lru->ninline_vallen);
+
+  lru_delete(lru, &cmd);
+  assert_false(lru_get(lru, &cmd, &lru_val));
+  assert_int_equal(STATUS_KEY_NOT_FOUND, lru_val.errcode);
+  assert_int_equal(0, lru->objcnt);
+  assert_int_equal(0, lru->inline_acc_keylen);
+  assert_int_equal(0, lru->inline_acc_vallen);
+  assert_int_equal(0, lru->ninline_keycnt);
+  assert_int_equal(0, lru->ninline_valcnt);
+  assert_int_equal(0, lru->ninline_keylen);
+  assert_int_equal(0, lru->ninline_vallen);
+
+  // long key, numeric value
+  cmd.req.op = PROTOCOL_BINARY_CMD_INCREMENT;
+  cmd.extra.numeric.addition_value = 0;
+  cmd.extra.numeric.init_value = 12345;
+  assert_true(lru_upsert(lru, &cmd, &lru_val));
+  assert_true(lru_get(lru, &cmd, &lru_val));
+  assert_int_equal(STATUS_NOERROR, lru_val.errcode);
+  assert_int_equal(1, lru->objcnt);
+  assert_int_equal(0, lru->inline_acc_keylen);
+  assert_int_equal(0, lru->inline_acc_vallen);
+  assert_int_equal(1, lru->ninline_keycnt);
+  assert_int_equal(0, lru->ninline_valcnt);
+  assert_int_equal(10, lru->ninline_keylen);
+  assert_int_equal(0, lru->ninline_vallen);
+
+  lru_delete(lru, &cmd);
+  assert_false(lru_get(lru, &cmd, &lru_val));
+  assert_int_equal(STATUS_KEY_NOT_FOUND, lru_val.errcode);
+  assert_int_equal(0, lru->objcnt);
+  assert_int_equal(0, lru->inline_acc_keylen);
+  assert_int_equal(0, lru->inline_acc_vallen);
+  assert_int_equal(0, lru->ninline_keycnt);
+  assert_int_equal(0, lru->ninline_valcnt);
+  assert_int_equal(0, lru->ninline_keylen);
+  assert_int_equal(0, lru->ninline_vallen);
+
+  lru_cleanup(lru);
+  assert_int_equal(0, lru->objcnt);
+  assert_int_equal(0, lru->inline_acc_keylen);
+  assert_int_equal(0, lru->inline_acc_vallen);
+  assert_int_equal(0, lru->ninline_keycnt);
+  assert_int_equal(0, lru->ninline_valcnt);
+  assert_int_equal(0, lru->ninline_keylen);
+  assert_int_equal(0, lru->ninline_vallen);
+  free(lru);
 }
 
 static void
@@ -617,8 +766,106 @@ test_swiper_pqueue(void **context)
 }
 
 static void
-test_swiper(void **context)
+test_swiper_epoch(void **context)
 {
+  lru_t *lru;
+  swiper_t *swiper;
+  cmd_handler cmd;
+  lru_val_t lru_val;
+  lru = lru_init(100, 8, 8);
+  swiper = swiper_init(lru, 20);
+
+  cmd.state = ASCII_CMD_READY;
+  cmd.req.op = PROTOCOL_BINARY_CMD_SET;
+  cmd.key = &cmd.buffer[0];
+  cmd.buf_used = 3;
+  cmd.req.keylen = 3;
+  cmd.req.cas = 0;
+  cmd.value_stored = 0;
+  cmd.extra.twoval.expiration = 0;
+  memcpy(&cmd.buffer, "abc", 3);
+  assert_true(lru_upsert(lru, &cmd, &lru_val));
+
+  sleep(1);
+  // now all epoch is out of date
+  lru_swipe(swiper);
+  assert_int_equal(0, lru->objcnt);
+  assert_int_equal(0, lru->inline_acc_keylen);
+  assert_int_equal(0, lru->inline_acc_vallen);
+  assert_int_equal(0, lru->ninline_keycnt);
+  assert_int_equal(0, lru->ninline_valcnt);
+  assert_int_equal(0, lru->ninline_keylen);
+  assert_int_equal(0, lru->ninline_vallen);
+
+  cmd.extra.twoval.expiration = 900;
+  memcpy(&cmd.buffer, "xyz", 3);
+  assert_true(lru_upsert(lru, &cmd, &lru_val));
+
+  sleep(1);
+  lru_swipe(swiper);
+  assert_int_equal(1, lru->objcnt);
+  assert_int_equal(3, lru->inline_acc_keylen);
+  assert_int_equal(0, lru->inline_acc_vallen);
+  assert_int_equal(0, lru->ninline_keycnt);
+  assert_int_equal(0, lru->ninline_valcnt);
+  assert_int_equal(0, lru->ninline_keylen);
+  assert_int_equal(0, lru->ninline_vallen);
+
+  lru_cleanup(lru);
+  assert_int_equal(0, lru->objcnt);
+  assert_int_equal(0, lru->inline_acc_keylen);
+  assert_int_equal(0, lru->inline_acc_vallen);
+  assert_int_equal(0, lru->ninline_keycnt);
+  assert_int_equal(0, lru->ninline_valcnt);
+  assert_int_equal(0, lru->ninline_keylen);
+  assert_int_equal(0, lru->ninline_vallen);
+  free(lru);
+  free(swiper);
+}
+
+static void
+test_swiper_txid(void **context)
+{
+  lru_t *lru;
+  swiper_t *swiper;
+  cmd_handler cmd;
+  lru_val_t lru_val;
+  uint64_t objcnt;
+  lru = lru_init(70, 8, 8);
+  swiper = swiper_init(lru, 40);
+
+  cmd.state = ASCII_CMD_READY;
+  cmd.req.op = PROTOCOL_BINARY_CMD_SET;
+  cmd.key = &cmd.buffer[0];
+  cmd.buf_used = 3;
+  cmd.req.keylen = 3;
+  cmd.req.cas = 0;
+  cmd.value_stored = 0;
+  cmd.extra.twoval.expiration = 900;
+
+  for (int i = 0; i < 120; i++)
+    {
+      sprintf(&cmd.buffer[0], "%03d", i);
+      lru_upsert(lru, &cmd, &lru_val);
+    }
+  objcnt = lru->objcnt;
+  printf("before swipe: %" PRIu64 "\n", objcnt);
+
+  lru_swipe(swiper);
+  assert_int_not_equal(0, lru->objcnt);
+  assert_true(objcnt > lru->objcnt);
+  printf("after swipe: %llu\n", lru->objcnt);
+
+  lru_cleanup(lru);
+  assert_int_equal(0, lru->objcnt);
+  assert_int_equal(0, lru->inline_acc_keylen);
+  assert_int_equal(0, lru->inline_acc_vallen);
+  assert_int_equal(0, lru->ninline_keycnt);
+  assert_int_equal(0, lru->ninline_valcnt);
+  assert_int_equal(0, lru->ninline_keylen);
+  assert_int_equal(0, lru->ninline_vallen);
+  free(lru);
+  free(swiper);
 }
 
 static void
@@ -639,6 +886,8 @@ main(void)
     cmocka_unit_test(test_lru_full),
     cmocka_unit_test(test_lru_delete),
     cmocka_unit_test(test_swiper_pqueue),
+    cmocka_unit_test(test_swiper_epoch),
+    cmocka_unit_test(test_swiper_txid),
   };
   return cmocka_run_group_tests(lru_tests, NULL, NULL);
 }

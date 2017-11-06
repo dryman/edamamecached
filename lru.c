@@ -56,7 +56,7 @@ lru_init(uint64_t num_objects, size_t inline_keylen, size_t inline_vallen)
 
   lru = calloc(sizeof(lru_t), 1);
 
-  capacity = num_objects * 7 / 10;
+  capacity = num_objects * 10 / 7;
   capacity_clz = __builtin_clzl(capacity);
   capacity_msb = 64 - capacity_clz;
   capacity_ms4b = round_up_div(capacity, 1UL << (capacity_msb - 4));
@@ -248,6 +248,7 @@ lru_get(lru_t *lru, cmd_handler *cmd, lru_val_t *lru_val)
           magic = atomic_load_explicit(&bucket->magic, memory_order_acquire);
           if ((magic & 0x3) == 0)
             {
+              lru_val->errcode = STATUS_KEY_NOT_FOUND;
               return false;
             }
           if ((magic & 0x3) == 2)
@@ -316,6 +317,7 @@ lru_get(lru_t *lru, cmd_handler *cmd, lru_val_t *lru_val)
       probing_key += up32key;
       idx_next = fast_mod_scale(probing_key, mask, lru->capacity_ms4b);
     }
+  lru_val->errcode = STATUS_KEY_NOT_FOUND;
   return false;
 }
 
@@ -484,7 +486,7 @@ lru_write_empty_bucket(lru_t *lru, struct bucket *bucket, cmd_handler *cmd,
   inline_keylen = lru->inline_keylen;
   inline_vallen = lru->inline_vallen;
 
-  now = time(NULL);
+  time(&now);
   txid = atomic_fetch_add_explicit(&lru->txid, 1, memory_order_relaxed);
   keylen = cmd->req.keylen;
 
@@ -594,7 +596,7 @@ lru_update_bucket(lru_t *lru, struct bucket *bucket, cmd_handler *cmd,
   uint8_t *valiter;
   void *newval;
 
-  now = time(NULL);
+  time(&now);
   inline_keylen = lru->inline_keylen;
   inline_vallen = lru->inline_vallen;
   vallen = cmd->value_stored;
@@ -844,8 +846,13 @@ lru_update_bucket(lru_t *lru, struct bucket *bucket, cmd_handler *cmd,
         bucket->ibucket.vallen = 0;
       else
         bucket->ibucket.vallen -= cmd->extra.numeric.addition_value;
+      // Numeric expiration is only exposed to the binary API.
+      // We use UINT64_MAX to mark if a numeric command is parsed from
+      // ascii protocol or from binary protocol (UINT64_MAX => ascii).
+      // When it is binary, we add the expiration, otherwise it inherits
+      // the expiration.
       if (cmd->extra.numeric.init_value != UINT64_MAX)
-        bucket->ibucket.epoch = now + cmd->extra.twoval.expiration;
+        bucket->ibucket.epoch = now + cmd->extra.numeric.expiration;
       lru_val->errcode = STATUS_NOERROR;
       lru_val->is_numeric_val = true;
       lru_val->vallen = bucket->ibucket.vallen;
@@ -931,13 +938,35 @@ lru_delete(lru_t *lru, cmd_handler *cmd)
                                     memory_order_relaxed);
           if (keylen > inline_keylen)
             {
+              atomic_fetch_sub_explicit(&lru->ninline_keycnt, 1,
+                                        memory_order_relaxed);
+              atomic_fetch_sub_explicit(&lru->ninline_keylen, keylen,
+                                        memory_order_relaxed);
               free(*((void **)&bucket->ibucket.data[0]));
             }
-          if (!bucket->ibucket.is_numeric_val && vallen > inline_vallen)
+          else
             {
-              free(*(void **)&bucket->ibucket.data[inline_keylen]);
+              atomic_fetch_sub_explicit(&lru->inline_acc_keylen, keylen,
+                                        memory_order_relaxed);
+            }
+          if (!bucket->ibucket.is_numeric_val)
+            {
+              if (vallen > inline_vallen)
+                {
+                  atomic_fetch_sub_explicit(&lru->ninline_valcnt, 1,
+                                            memory_order_relaxed);
+                  atomic_fetch_sub_explicit(&lru->ninline_vallen, vallen,
+                                            memory_order_relaxed);
+                  free(*(void **)&bucket->ibucket.data[inline_keylen]);
+                }
+              else
+                {
+                  atomic_fetch_sub_explicit(&lru->inline_acc_vallen, vallen,
+                                            memory_order_relaxed);
+                }
             }
 
+          atomic_fetch_sub_explicit(&lru->objcnt, 1, memory_order_relaxed);
           atomic_store_explicit(&bucket->magic, 2, memory_order_release);
           return;
         next_iter:
@@ -989,13 +1018,34 @@ reload_magic:
   atomic_fetch_sub_explicit(&lru->probe_stats[probe], 1, memory_order_relaxed);
   if (keylen > inline_keylen)
     {
+      atomic_fetch_sub_explicit(&lru->ninline_keycnt, 1, memory_order_relaxed);
+      atomic_fetch_sub_explicit(&lru->ninline_keylen, keylen,
+                                memory_order_relaxed);
       free(*((void **)&bucket->ibucket.data[0]));
     }
-  if (!bucket->ibucket.is_numeric_val && vallen > inline_vallen)
+  else
     {
-      free(*(void **)&bucket->ibucket.data[inline_keylen]);
+      atomic_fetch_sub_explicit(&lru->inline_acc_keylen, keylen,
+                                memory_order_relaxed);
+    }
+  if (!bucket->ibucket.is_numeric_val)
+    {
+      if (vallen > inline_vallen)
+        {
+          atomic_fetch_sub_explicit(&lru->ninline_valcnt, 1,
+                                    memory_order_relaxed);
+          atomic_fetch_sub_explicit(&lru->ninline_vallen, vallen,
+                                    memory_order_relaxed);
+          free(*(void **)&bucket->ibucket.data[inline_keylen]);
+        }
+      else
+        {
+          atomic_fetch_sub_explicit(&lru->inline_acc_vallen, vallen,
+                                    memory_order_relaxed);
+        }
     }
 
+  atomic_fetch_sub_explicit(&lru->objcnt, 1, memory_order_relaxed);
   atomic_store_explicit(&bucket->magic, 2, memory_order_release);
   return true;
 }
@@ -1097,7 +1147,7 @@ lru_swipe(swiper_t *swiper)
   inline_vallen = lru->inline_vallen;
   bucket_size = sizeof(struct bucket) + inline_keylen + inline_vallen;
   ibucket_size = sizeof(struct inner_bucket) + inline_keylen + inline_vallen;
-  now = time(NULL);
+  time(&now);
   buckets = lru->buckets;
 
   // O(N * log(k)). k = priority queue size
@@ -1119,7 +1169,7 @@ lru_swipe(swiper_t *swiper)
       txid = bucket->txid;
       rcu_read_unlock();
 
-      if (epoch > now)
+      if (epoch < now)
         {
           lru_delete_bucket(lru, bucket, UINT64_MAX);
         }
