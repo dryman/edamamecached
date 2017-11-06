@@ -29,15 +29,6 @@ struct bucket
   struct inner_bucket ibucket;
 } __attribute__((packed));
 
-struct swiper_t
-{
-  lru_t *lru;
-  uint32_t pqueue_size;
-  uint32_t pqueue_used;
-  // pqueue[x][0] is idx of the bucket
-  // pqueue[x][1] is txid
-  uint64_t pqueue[0][2];
-};
 
 void lru_write_empty_bucket(lru_t *lru, struct bucket *bucket,
                             cmd_handler *cmd, lru_val_t *lru_val);
@@ -45,9 +36,14 @@ bool lru_update_bucket(lru_t *lru, struct bucket *bucket, cmd_handler *cmd,
                        lru_val_t *lru_val);
 
 uint64_t
-lru_capacity(uint8_t capacity_clz, uint8_t capacity_ms4b)
+lru_capacity_(uint8_t capacity_clz, uint8_t capacity_ms4b)
 {
   return (1ULL << (64 - capacity_clz - 4)) * capacity_ms4b;
+}
+
+uint64_t lru_capacity(lru_t* lru)
+{
+  return lru_capacity_(lru->capacity_clz, lru->capacity_ms4b);
 }
 
 lru_t *
@@ -64,7 +60,7 @@ lru_init(uint64_t num_objects, size_t inline_keylen, size_t inline_vallen)
   capacity_clz = __builtin_clzl(capacity);
   capacity_msb = 64 - capacity_clz;
   capacity_ms4b = round_up_div(capacity, 1UL << (capacity_msb - 4));
-  capacity = lru_capacity(capacity_clz, capacity_ms4b);
+  capacity = lru_capacity_(capacity_clz, capacity_ms4b);
 
   inline_keylen = inline_keylen > 8 ? inline_keylen : 8;
   inline_vallen = inline_vallen > 8 ? inline_vallen : 8;
@@ -108,7 +104,7 @@ lru_cleanup(lru_t *lru)
   bucket_size = sizeof(struct bucket) + inline_keylen + inline_vallen;
   ibucket_size = sizeof(struct inner_bucket) + inline_keylen + inline_vallen;
   buckets = lru->buckets;
-  capacity = lru_capacity(lru->capacity_clz, lru->capacity_ms4b);
+  capacity = lru_capacity_(lru->capacity_clz, lru->capacity_ms4b);
 
   for (size_t idx = 0; idx < capacity; idx++)
     {
@@ -157,7 +153,7 @@ lru_cleanup(lru_t *lru)
           else
             {
               atomic_fetch_sub_explicit(&lru->inline_acc_vallen,
-                                        bucket->ibucket.keylen,
+                                        bucket->ibucket.vallen,
                                         memory_order_relaxed);
             }
         }
@@ -233,7 +229,7 @@ lru_get(lru_t *lru, cmd_handler *cmd, lru_val_t *lru_val)
       = atomic_load_explicit(&lru->longest_probes, memory_order_acquire);
   buckets = lru->buckets;
 
-  capacity = lru_capacity(lru->capacity_clz, lru->capacity_ms4b);
+  capacity = lru_capacity_(lru->capacity_clz, lru->capacity_ms4b);
   mask = (1ULL << (64 - lru->capacity_clz)) - 1;
   hashed_key = cityhash64((uint8_t *)cmd->key, keylen);
   up32key = hashed_key >> 32;
@@ -342,7 +338,7 @@ lru_upsert(lru_t *lru, cmd_handler *cmd, lru_val_t *lru_val)
   ibucket_size = sizeof(struct inner_bucket) + inline_keylen + inline_vallen;
   buckets = lru->buckets;
 
-  capacity = lru_capacity(lru->capacity_clz, lru->capacity_ms4b);
+  capacity = lru_capacity_(lru->capacity_clz, lru->capacity_ms4b);
   mask = (1ULL << (64 - lru->capacity_clz)) - 1;
   hashed_key = cityhash64((uint8_t *)cmd->key, keylen);
   up32key = hashed_key >> 32;
@@ -424,6 +420,8 @@ lru_upsert(lru_t *lru, cmd_handler *cmd, lru_val_t *lru_val)
             }
           // Reading key on each probe need to be protected
           // by the rcu read lock.
+          // TODO maybe wrong... deref magic should be within
+          // the read lock section
           rcu_read_lock();
           if (bucket->ibucket.keylen != keylen)
             {
@@ -882,7 +880,7 @@ lru_delete(lru_t *lru, cmd_handler *cmd)
       = atomic_load_explicit(&lru->longest_probes, memory_order_acquire);
   buckets = lru->buckets;
 
-  capacity = lru_capacity(lru->capacity_clz, lru->capacity_ms4b);
+  capacity = lru_capacity_(lru->capacity_clz, lru->capacity_ms4b);
   mask = (1ULL << (64 - lru->capacity_clz)) - 1;
   hashed_key = cityhash64((uint8_t *)cmd->key, keylen);
   up32key = hashed_key >> 32;
@@ -1008,20 +1006,6 @@ void pq_swap(uint64_t (*a)[2], uint64_t (*b)[2])
   (*b)[1] = tmp;
 }
 
-int
-pq_cmp(const void *_a, const void *_b)
-{
-  const int64_t(*a)[2] = _a;
-  const int64_t(*b)[2] = _b;
-  return (*a)[1] - (*b)[1];
-}
-
-void
-pq_sort(swiper_t *swiper)
-{
-  qsort(swiper->pqueue, swiper->pqueue_used, sizeof(uint64_t[2]), pq_cmp);
-}
-
 void
 pq_add(swiper_t *swiper, uint64_t idx, uint64_t txid)
 {
@@ -1030,12 +1014,13 @@ pq_add(swiper_t *swiper, uint64_t idx, uint64_t txid)
   pq_idx = swiper->pqueue_used++;
   swiper->pqueue[pq_idx][0] = idx;
   swiper->pqueue[pq_idx][1] = txid;
-  for (; pq_idx > 1; pq_idx /= 2)
+  while (pq_idx > 0)
     {
-      pq_idx_parent = pq_idx / 2;
+      pq_idx_parent = (pq_idx - 1) / 2;
       if (swiper->pqueue[pq_idx_parent][1] < swiper->pqueue[pq_idx][1])
         {
           pq_swap(&swiper->pqueue[pq_idx_parent], &swiper->pqueue[pq_idx]);
+          pq_idx = pq_idx_parent;
         }
       else
         break;
@@ -1047,12 +1032,14 @@ pq_pop_add(swiper_t *swiper, uint64_t idx, uint64_t txid)
 {
   uint64_t pq_idx, pq_idx_l, pq_idx_r, max_idx;
   pq_idx = 0;
+  if (txid >= swiper->pqueue[pq_idx][1])
+    return;
   swiper->pqueue[pq_idx][0] = idx;
   swiper->pqueue[pq_idx][1] = txid;
   while (pq_idx < swiper->pqueue_size)
     {
-      pq_idx_l = pq_idx * 2 - 1;
-      pq_idx_r = pq_idx * 2;
+      pq_idx_l = pq_idx * 2 + 1;
+      pq_idx_r = pq_idx * 2 + 2;
       max_idx = pq_idx;
       if (pq_idx_l < swiper->pqueue_size
           && swiper->pqueue[pq_idx_l][1] > swiper->pqueue[max_idx][1])
@@ -1065,7 +1052,23 @@ pq_pop_add(swiper_t *swiper, uint64_t idx, uint64_t txid)
           pq_swap(&swiper->pqueue[pq_idx], &swiper->pqueue[max_idx]);
           pq_idx = max_idx;
         }
+      else
+        break;
     }
+}
+
+int
+pq_cmp(const void *_a, const void *_b)
+{
+  const int64_t(*a)[2] = _a;
+  const int64_t(*b)[2] = _b;
+  return (*a)[1] - (*b)[1];
+}
+
+void
+pq_sort(swiper_t *swiper)
+{
+  qsort(swiper->pqueue, swiper->pqueue_used, sizeof(uint64_t[2]), pq_cmp);
 }
 
 // This method can only be executed by a single thread.
@@ -1083,7 +1086,7 @@ lru_swipe(swiper_t *swiper)
   uint8_t magic;
 
   lru = swiper->lru;
-  capacity = lru_capacity(lru->capacity_clz, lru->capacity_ms4b);
+  capacity = lru_capacity_(lru->capacity_clz, lru->capacity_ms4b);
   threshold = capacity * 7 / 10;
   inline_keylen = lru->inline_keylen;
   inline_vallen = lru->inline_vallen;
