@@ -29,7 +29,6 @@ struct bucket
   struct inner_bucket ibucket;
 } __attribute__((packed));
 
-
 void lru_write_empty_bucket(lru_t *lru, struct bucket *bucket,
                             cmd_handler *cmd, lru_val_t *lru_val);
 bool lru_update_bucket(lru_t *lru, struct bucket *bucket, cmd_handler *cmd,
@@ -41,7 +40,8 @@ lru_capacity_(uint8_t capacity_clz, uint8_t capacity_ms4b)
   return (1ULL << (64 - capacity_clz - 4)) * capacity_ms4b;
 }
 
-uint64_t lru_capacity(lru_t* lru)
+uint64_t
+lru_capacity(lru_t *lru)
 {
   return lru_capacity_(lru->capacity_clz, lru->capacity_ms4b);
 }
@@ -762,7 +762,8 @@ lru_update_bucket(lru_t *lru, struct bucket *bucket, cmd_handler *cmd,
                                     memory_order_relaxed);
           atomic_fetch_add_explicit(&lru->ninline_valcnt, 1,
                                     memory_order_relaxed);
-          atomic_fetch_add_explicit(&lru->ninline_vallen, vallen,
+          atomic_fetch_add_explicit(&lru->ninline_vallen,
+                                    vallen + current_vallen,
                                     memory_order_relaxed);
           bucket->ibucket.vallen = current_vallen + vallen;
           lru_val->errcode = STATUS_NOERROR;
@@ -798,12 +799,17 @@ lru_update_bucket(lru_t *lru, struct bucket *bucket, cmd_handler *cmd,
       if (!bucket->ibucket.is_numeric_val)
         {
           ed_errno = 0;
-          uint64_t numeric_val
-              = strn2uint64((char *)&bucket->ibucket.data[inline_keylen],
-                            bucket->ibucket.vallen, (char **)&valiter);
+          // BUG: valptr may not be inline
+          uint64_t numeric_val;
+          void *valptr;
+          valptr = bucket->ibucket.vallen > inline_vallen
+                       ? *((void **)&bucket->ibucket.data[inline_keylen])
+                       : &bucket->ibucket.data[inline_keylen];
+
+          numeric_val
+              = strn2uint64(valptr, bucket->ibucket.vallen, (char **)&valiter);
           if (ed_errno
-              || valiter - &bucket->ibucket.data[inline_keylen]
-                     != bucket->ibucket.vallen)
+              || (valiter - (uint8_t *)valptr) != bucket->ibucket.vallen)
             {
               syslog(LOG_ERR,
                      "cannot increment or decrement non-numeric value");
@@ -812,8 +818,7 @@ lru_update_bucket(lru_t *lru, struct bucket *bucket, cmd_handler *cmd,
             }
           if (bucket->ibucket.vallen > inline_vallen)
             {
-              void **valptr = (void **)&bucket->ibucket.data[inline_keylen];
-              free(*valptr);
+              free(valptr);
               atomic_fetch_sub_explicit(&lru->ninline_valcnt, 1,
                                         memory_order_relaxed);
               atomic_fetch_sub_explicit(&lru->ninline_vallen,
