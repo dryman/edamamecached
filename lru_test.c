@@ -546,13 +546,46 @@ test_numeric_append_prepend(void **context)
 }
 
 static void
-test_touch(void **context)
+test_lru_full(void **context)
 {
+  lru_t *lru;
+  cmd_handler cmd;
+  lru_val_t lru_val;
+  lru = lru_init(70, 8, 8);
+
+  cmd.state = ASCII_CMD_READY;
+  cmd.req.op = PROTOCOL_BINARY_CMD_SET;
+  cmd.key = &cmd.buffer[0];
+  cmd.buf_used = 3;
+  cmd.req.keylen = 3;
+  cmd.req.cas = 0;
+  cmd.value_stored = 0;
+
+  int i;
+  for (i = 0; i < 120; i++)
+    {
+      sprintf(&cmd.buffer[0], "%03d", i);
+      if (!lru_upsert(lru, &cmd, &lru_val))
+        break;
+    }
+  assert_int_not_equal(120, i);
+  assert_int_equal(STATUS_BUSY, lru_val.errcode);
+
+  lru_cleanup(lru);
+  assert_int_equal(0, lru->objcnt);
+  assert_int_equal(0, lru->inline_acc_keylen);
+  assert_int_equal(0, lru->inline_acc_vallen);
+  assert_int_equal(0, lru->ninline_keycnt);
+  assert_int_equal(0, lru->ninline_valcnt);
+  assert_int_equal(0, lru->ninline_keylen);
+  assert_int_equal(0, lru->ninline_vallen);
+  free(lru);
 }
 
-static void test_lru_full(void **context);
-
-static void test_lru_delete(void **context);
+static void
+test_lru_delete(void **context)
+{
+}
 
 static void
 test_swiper_pqueue(void **context)
@@ -588,6 +621,11 @@ test_swiper(void **context)
 {
 }
 
+static void
+test_touch(void **context)
+{
+}
+
 int
 main(void)
 {
@@ -598,6 +636,8 @@ main(void)
     cmocka_unit_test(test_add_replace),
     cmocka_unit_test(test_append_prepend),
     cmocka_unit_test(test_numeric_append_prepend),
+    cmocka_unit_test(test_lru_full),
+    cmocka_unit_test(test_lru_delete),
     cmocka_unit_test(test_swiper_pqueue),
   };
   return cmocka_run_group_tests(lru_tests, NULL, NULL);
