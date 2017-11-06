@@ -856,6 +856,14 @@ test_swiper_txid(void **context)
   assert_true(objcnt > lru->objcnt);
   printf("after swipe: %llu\n", lru->objcnt);
 
+  // all earliest keys should get deleted already
+  for (int i = 0; i < 10; i++)
+    {
+      sprintf(&cmd.buffer[0], "%03d", i);
+      assert_false(lru_get(lru, &cmd, &lru_val));
+      assert_int_equal(STATUS_KEY_NOT_FOUND, lru_val.errcode);
+    }
+
   lru_cleanup(lru);
   assert_int_equal(0, lru->objcnt);
   assert_int_equal(0, lru->inline_acc_keylen);
