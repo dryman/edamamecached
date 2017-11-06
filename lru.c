@@ -355,14 +355,20 @@ lru_upsert(lru_t *lru, cmd_handler *cmd, lru_val_t *lru_val)
       __builtin_prefetch(&buckets[idx_next * bucket_size], 0, 0);
       while (true)
         {
+          rcu_read_lock();
           bucket = (struct bucket *)&buckets[idx * bucket_size];
           magic = atomic_load_explicit(&bucket->magic, memory_order_acquire);
-        check_magic:
           if (magic == 0x80 || magic == 0x82 || (magic & 0x3) == 0x3)
-            continue;
+            {
+              rcu_read_unlock();
+              continue;
+            }
           // insert case
           if (magic == 0 || magic == 2)
             {
+              // We're not going to read the value rcu read lock
+              // is protecting, so we can release the read lock here.
+              rcu_read_unlock();
               switch (cmd->req.op)
                 {
                 case PROTOCOL_BINARY_CMD_SET:
@@ -401,7 +407,7 @@ lru_upsert(lru_t *lru, cmd_handler *cmd, lru_val_t *lru_val)
               if (!atomic_compare_exchange_strong_explicit(
                       &bucket->magic, &magic, new_magic, memory_order_acq_rel,
                       memory_order_acquire))
-                goto check_magic;
+                continue;
               lru_write_empty_bucket(lru, bucket, cmd, lru_val);
               bucket->ibucket.probe = probe;
               atomic_store_explicit(&bucket->magic, 1, memory_order_release);
@@ -420,11 +426,7 @@ lru_upsert(lru_t *lru, cmd_handler *cmd, lru_val_t *lru_val)
                   memory_order_release, memory_order_relaxed));
               return true;
             }
-          // Reading key on each probe need to be protected
-          // by the rcu read lock.
-          // TODO maybe wrong... deref magic should be within
-          // the read lock section
-          rcu_read_lock();
+          // This is where we read the value rcu read lock is protecting
           if (bucket->ibucket.keylen != keylen)
             {
               rcu_read_unlock();
@@ -454,7 +456,7 @@ lru_upsert(lru_t *lru, cmd_handler *cmd, lru_val_t *lru_val)
                   memory_order_acq_rel, memory_order_acquire))
             {
               free_tmpbucket(lru, tmp_idx);
-              goto check_magic;
+              continue;
             }
           synchronize_rcu();
           ret = lru_update_bucket(lru, bucket, cmd, lru_val);
@@ -907,29 +909,48 @@ lru_delete(lru_t *lru, cmd_handler *cmd)
       __builtin_prefetch(&buckets[idx_next * bucket_size], 0, 0);
       while (true)
         {
+          rcu_read_lock();
           bucket = (struct bucket *)&buckets[idx * bucket_size];
-        check_magic:
           magic = atomic_load_explicit(&bucket->magic, memory_order_acquire);
 
           if (magic == 0)
-            return;
-          if (magic == 2)
-            goto next_iter;
-          if (magic == 0x80 || magic == 0x82 || (magic & 0x3) == 0x3)
-            goto check_magic;
-          if (bucket->ibucket.keylen != keylen)
             {
+              rcu_read_unlock();
+              return;
+            }
+          if (magic == 2)
+            {
+              rcu_read_unlock();
               goto next_iter;
             }
-          rcu_read_lock();
+          if (magic == 0x80 || magic == 0x82 || (magic & 0x3) == 0x3)
+            {
+              rcu_read_unlock();
+              continue;
+            }
+          if (bucket->ibucket.keylen != keylen)
+            {
+              rcu_read_unlock();
+              goto next_iter;
+            }
           keyptr = keylen > inline_keylen ? *(void **)&bucket->ibucket.data
                                           : &bucket->ibucket.data;
           if (!memeq(keyptr, cmd->key, keylen))
             {
+              rcu_read_unlock();
               goto next_iter;
             }
+          // finished reading the key, so now we can release the rcu read
+          // lock.
           rcu_read_unlock();
-          atomic_store_explicit(&bucket->magic, 0x82, memory_order_release);
+          // Mutate the magic to exclude other write access.
+          // From readers view, this is as if the value is deleted in
+          // an atomic operation.
+          if (!atomic_compare_exchange_strong_explicit(
+                  &bucket->magic, &magic, 0x82, memory_order_release,
+                  memory_order_acquire))
+            continue;
+          // Drain remaining readers that might be accessing it.
           synchronize_rcu();
           keylen = bucket->ibucket.keylen;
           vallen = bucket->ibucket.vallen;
