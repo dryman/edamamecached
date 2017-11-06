@@ -871,6 +871,47 @@ test_swiper_txid(void **context)
 static void
 test_touch(void **context)
 {
+  lru_t *lru;
+  swiper_t *swiper;
+  cmd_handler cmd;
+  lru_val_t lru_val;
+  lru = lru_init(100, 8, 8);
+  swiper = swiper_init(lru, 20);
+
+  cmd.state = ASCII_CMD_READY;
+  cmd.req.op = PROTOCOL_BINARY_CMD_SET;
+  cmd.key = &cmd.buffer[0];
+  cmd.buf_used = 3;
+  cmd.req.keylen = 3;
+  cmd.req.cas = 0;
+  cmd.value_stored = 0;
+  cmd.extra.twoval.expiration = 0;
+  memcpy(&cmd.buffer, "abc", 3);
+  assert_true(lru_upsert(lru, &cmd, &lru_val));
+
+  cmd.req.op = PROTOCOL_BINARY_CMD_TOUCH;
+  cmd.extra.twoval.expiration = 900;
+  assert_true(lru_upsert(lru, &cmd, &lru_val));
+  sleep(1);
+  lru_swipe(swiper);
+  assert_int_equal(1, lru->objcnt);
+  assert_int_equal(3, lru->inline_acc_keylen);
+  assert_int_equal(0, lru->inline_acc_vallen);
+  assert_int_equal(0, lru->ninline_keycnt);
+  assert_int_equal(0, lru->ninline_valcnt);
+  assert_int_equal(0, lru->ninline_keylen);
+  assert_int_equal(0, lru->ninline_vallen);
+
+  lru_cleanup(lru);
+  assert_int_equal(0, lru->objcnt);
+  assert_int_equal(0, lru->inline_acc_keylen);
+  assert_int_equal(0, lru->inline_acc_vallen);
+  assert_int_equal(0, lru->ninline_keycnt);
+  assert_int_equal(0, lru->ninline_valcnt);
+  assert_int_equal(0, lru->ninline_keylen);
+  assert_int_equal(0, lru->ninline_vallen);
+  free(lru);
+  free(swiper);
 }
 
 int
@@ -888,6 +929,7 @@ main(void)
     cmocka_unit_test(test_swiper_pqueue),
     cmocka_unit_test(test_swiper_epoch),
     cmocka_unit_test(test_swiper_txid),
+    cmocka_unit_test(test_touch),
   };
   return cmocka_run_group_tests(lru_tests, NULL, NULL);
 }
