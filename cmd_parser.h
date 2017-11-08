@@ -6,9 +6,9 @@
  * to you under the Apache License, Version 2.0 (the
  * "License"); you may not use this file except in compliance
  * with the License.  You may obtain a copy of the License at
- * 
+ *
  *   http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing,
  * software distributed under the License is distributed on an
  * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
@@ -42,9 +42,8 @@ ssize_t ascii_cpbuf(cmd_handler *cmd, ssize_t nbyte, char *buf,
 void ascii_parse_cmd(cmd_handler *cmd, ed_writer *writer);
 ssize_t cmd_parse_ascii_value(cmd_handler *cmd, ssize_t nbyte, char *buf,
                               ed_writer *writer);
-ssize_t cmd_parse_get(cmd_handler *cmd, ssize_t nbyte, char *buf,
+ssize_t cmd_parse_get(cmd_handler *cmd, ssize_t nbyte, char *buf, void *lru,
                       ed_writer *writer);
-void process_cmd_get(cmd_handler *cmd, ed_writer *writer);
 ssize_t binary_cpbuf(cmd_handler *cmd, ssize_t nbyte, char *buf,
                      ed_writer *writer);
 ssize_t binary_cmd_parse_extra(cmd_handler *cmd, ssize_t nbyte, char *buf,
@@ -53,6 +52,7 @@ ssize_t binary_cmd_parse_key(cmd_handler *cmd, ssize_t nbyte, char *buf,
                              ed_writer *writer);
 ssize_t binary_cmd_parse_value(cmd_handler *cmd, ssize_t nbyte, char *buf,
                                ed_writer *writer);
+extern void process_cmd_get(void *lru, cmd_handler *cmd, ed_writer *writer);
 
 enum cmd_state
 {

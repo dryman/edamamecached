@@ -6,9 +6,9 @@
  * to you under the Apache License, Version 2.0 (the
  * "License"); you may not use this file except in compliance
  * with the License.  You may obtain a copy of the License at
- * 
+ *
  *   http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing,
  * software distributed under the License is distributed on an
  * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
@@ -17,6 +17,7 @@
  * under the License.
  */
 
+#include "cmd_reader.h"
 #include "cmd_parser.h"
 #include "writer.h"
 #include <ctype.h>
@@ -27,39 +28,55 @@ char ascii_ok[] = "ASCII OK\r\n";
 char binary_ok[] = "BINARY OK\r\n";
 char txt_stored[] = "STORED\r\n";
 
+void process_ascii_cmd(lru_t *lru, cmd_handler *cmd, ed_writer *writer);
+void process_cmd_get(void *lru, cmd_handler *cmd, ed_writer *writer);
+
 void
-edamame_read(cmd_handler *cmd, int nbyte, char *data, ed_writer *writer)
+edamame_read(lru_t *lru, cmd_handler *cmd, int nbyte, char *data,
+             ed_writer *writer)
 {
   int idx = 0;
 
-  while (idx < nbyte || cmd->state != CMD_CLEAN)
+  while (idx < nbyte)
     {
+    advance_state:
       switch (cmd->state)
         {
         case CMD_CLEAN:
-          if (data[0] == '\x80')
+          if (idx < nbyte)
             {
-              idx += binary_cpbuf(cmd, nbyte - idx, &data[idx], writer);
+              if (data[idx] == '\x80')
+                cmd->state = BINARY_PENDING_RAWBUF;
+              else
+                cmd->state = ASCII_PENDING_RAWBUF;
+              goto advance_state;
             }
-          else
-            {
-              idx += ascii_cpbuf(cmd, nbyte - idx, &data[idx], writer);
-            }
-          syslog(LOG_DEBUG, "current state: %d", cmd->state);
           break;
         case ASCII_PENDING_RAWBUF:
+          syslog(LOG_DEBUG, "Enter ASCII_PENDING_RAWBUF");
           idx += ascii_cpbuf(cmd, nbyte - idx, &data[idx], writer);
-          syslog(LOG_DEBUG, "current state: %d", cmd->state);
+          if (cmd->state == ASCII_PENDING_PARSE_CMD
+              || cmd->state == ASCII_PENDING_GET_MULTI
+              || cmd->state == ASCII_PENDING_GET_CAS_MULTI)
+            goto advance_state;
           break;
         case ASCII_PENDING_PARSE_CMD:
+          syslog(LOG_DEBUG, "Enter ASCII_PENDING_PARSE_CMD");
           ascii_parse_cmd(cmd, writer);
+          syslog(LOG_DEBUG, " CMD parsed");
+          if (cmd->state == ASCII_PENDING_VALUE
+              || cmd->state == ASCII_CMD_READY)
+            goto advance_state;
           break;
         case ASCII_PENDING_GET_MULTI:
         case ASCII_PENDING_GET_CAS_MULTI:
-          idx += cmd_parse_get(cmd, nbyte - idx, &data[idx], writer);
+          idx += cmd_parse_get(cmd, nbyte - idx, &data[idx], lru, writer);
           break;
         case ASCII_PENDING_VALUE:
           idx += cmd_parse_ascii_value(cmd, nbyte - idx, &data[idx], writer);
+          syslog(LOG_DEBUG, "got value");
+          if (cmd->state == ASCII_CMD_READY)
+            goto advance_state;
           break;
         case ASCII_CMD_READY:
           // TODO process ascii cmd
@@ -87,8 +104,25 @@ edamame_read(cmd_handler *cmd, int nbyte, char *data, ed_writer *writer)
 }
 
 void
-process_cmd_get(cmd_handler *cmd, ed_writer *writer)
+process_ascii_cmd(lru_t *lru, cmd_handler *cmd, ed_writer *writer)
 {
+  switch (cmd->req.op)
+    {
+    case PROTOCOL_BINARY_CMD_SET:
+    case PROTOCOL_BINARY_CMD_ADD:
+    case PROTOCOL_BINARY_CMD_REPLACE:
+    case PROTOCOL_BINARY_CMD_INCREMENT:
+    case PROTOCOL_BINARY_CMD_DECREMENT:
+    case PROTOCOL_BINARY_CMD_APPEND:
+    case PROTOCOL_BINARY_CMD_PREPEND:
+      break;
+    }
+}
+
+void
+process_cmd_get(void *lru_, cmd_handler *cmd, ed_writer *writer)
+{
+  lru_t *lru = lru_;
   writer_reserve(writer, cmd->req.keylen);
   writer_append(writer, cmd->key, cmd->req.keylen);
   writer_reserve(writer, sizeof(EOL) - 1);

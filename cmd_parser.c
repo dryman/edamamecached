@@ -6,9 +6,9 @@
  * to you under the Apache License, Version 2.0 (the
  * "License"); you may not use this file except in compliance
  * with the License.  You may obtain a copy of the License at
- * 
+ *
  *   http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing,
  * software distributed under the License is distributed on an
  * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
@@ -216,6 +216,7 @@ ascii_parse_cmd(cmd_handler *cmd, ed_writer *writer)
         }
       if (!parse_uint32(&cmd->req.bodylen, &iter1))
         {
+          syslog(LOG_DEBUG, "3rd number wrong");
           writer_reserve(writer, sizeof(BAD_CMD_ERROR) - 1);
           writer_append(writer, BAD_CMD_ERROR, sizeof(BAD_CMD_ERROR) - 1);
           reset_cmd_handler(cmd);
@@ -728,7 +729,8 @@ cmd_parse_ascii_value(cmd_handler *cmd, ssize_t nbyte, char *buf,
 }
 
 ssize_t
-cmd_parse_get(cmd_handler *cmd, ssize_t nbyte, char *buf, ed_writer *writer)
+cmd_parse_get(cmd_handler *cmd, ssize_t nbyte, char *buf, void *lru,
+              ed_writer *writer)
 {
   ssize_t idx1, idx2;
   // idx1 for scanning space
@@ -770,7 +772,7 @@ cmd_parse_get(cmd_handler *cmd, ssize_t nbyte, char *buf, ed_writer *writer)
           cmd->req.keylen = cmd->buf_used;
           cmd->key = cmd->buffer;
           // process get, by GET/GET_CAS
-          process_cmd_get(cmd, writer);
+          process_cmd_get(lru, cmd, writer);
           cmd->buf_used = 0;
           cmd->state = CMD_CLEAN;
           return idx2;
@@ -788,7 +790,7 @@ cmd_parse_get(cmd_handler *cmd, ssize_t nbyte, char *buf, ed_writer *writer)
       cmd->req.keylen = cmd->buf_used;
       cmd->key = cmd->buffer;
       // process get, by GET/GET_CAS
-      process_cmd_get(cmd, writer);
+      process_cmd_get(lru, cmd, writer);
       cmd->buf_used = 0;
       return idx2;
     }
@@ -832,14 +834,14 @@ cmd_parse_get(cmd_handler *cmd, ssize_t nbyte, char *buf, ed_writer *writer)
       cmd->req.keylen = idx2 - idx1;
       cmd->key = &buf[idx1];
       // process get/gets
-      process_cmd_get(cmd, writer);
+      process_cmd_get(lru, cmd, writer);
       cmd->state = CMD_CLEAN;
       return idx2 + 1;
     }
   cmd->req.keylen = idx2 - idx1;
   cmd->key = &buf[idx1];
   // process get/gets
-  process_cmd_get(cmd, writer);
+  process_cmd_get(lru, cmd, writer);
   return idx2;
 }
 

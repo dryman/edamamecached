@@ -6,9 +6,9 @@
  * to you under the Apache License, Version 2.0 (the
  * "License"); you may not use this file except in compliance
  * with the License.  You may obtain a copy of the License at
- * 
+ *
  *   http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing,
  * software distributed under the License is distributed on an
  * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
@@ -895,7 +895,7 @@ test_ascii_parse_cmd_touch(void **context)
 }
 
 void
-process_cmd_get(cmd_handler *cmd, ed_writer *writer)
+process_cmd_get(void *lru, cmd_handler *cmd, ed_writer *writer)
 {
   // do nothing for now
   printf("process_cmd_get called\n");
@@ -927,23 +927,23 @@ test_cmd_parse_get(void **context)
   char buf1[] = "012 456 890\r\n";
   cmd_handler cmd = {};
   cmd.state = ASCII_PENDING_GET_MULTI;
-  assert_int_equal(3, cmd_parse_get(&cmd, 4, buf1, NULL));
+  assert_int_equal(3, cmd_parse_get(&cmd, 4, buf1, NULL, NULL));
   assert_int_equal(ASCII_PENDING_GET_MULTI, cmd.state);
   assert_ptr_equal(&buf1[0], cmd.key);
   assert_int_equal(3, cmd.req.keylen);
 
-  assert_int_equal(3, cmd_parse_get(&cmd, 3, &buf1[3], NULL));
+  assert_int_equal(3, cmd_parse_get(&cmd, 3, &buf1[3], NULL, NULL));
   assert_int_equal(2, cmd.buf_used);
   assert_memory_equal(cmd.buffer, &buf1[4], 2);
   assert_int_equal(ASCII_PENDING_GET_MULTI, cmd.state);
 
-  assert_int_equal(1, cmd_parse_get(&cmd, 7, &buf1[6], NULL));
+  assert_int_equal(1, cmd_parse_get(&cmd, 7, &buf1[6], NULL, NULL));
   assert_int_equal(3, cmd.req.keylen);
   assert_memory_equal(&buf1[4], cmd.key, 3);
   assert_int_equal(0, cmd.buf_used);
   assert_int_equal(ASCII_PENDING_GET_MULTI, cmd.state);
 
-  assert_int_equal(5, cmd_parse_get(&cmd, 6, &buf1[7], NULL));
+  assert_int_equal(5, cmd_parse_get(&cmd, 6, &buf1[7], NULL, NULL));
   assert_ptr_equal(&buf1[8], cmd.key);
   assert_int_equal(3, cmd.req.keylen);
   assert_int_equal(CMD_CLEAN, cmd.state);

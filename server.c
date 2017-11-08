@@ -6,9 +6,9 @@
  * to you under the Apache License, Version 2.0 (the
  * "License"); you may not use this file except in compliance
  * with the License.  You may obtain a copy of the License at
- * 
+ *
  *   http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing,
  * software distributed under the License is distributed on an
  * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
@@ -33,20 +33,23 @@
 
 #include "cmd_parser.h"
 #include "cmd_reader.h"
+#include "lru.h"
 #include "writer.h"
+
+#define BUF_SIZE 65536
+#define POLL_TIMEOUT 1000
 
 static int port_num = 7500;
 // TODO different system has different max value.
 static int poll_fd_max = 256;
+static lru_t *lru;
+static swiper_t *swiper;
 
 struct thread_pipe
 {
   int thread_id;
   int pipefd[2];
 };
-
-#define BUF_SIZE 65536
-#define POLL_TIMEOUT 1000
 
 void *
 ev_loop(void *context)
@@ -132,7 +135,8 @@ ev_loop(void *context)
                     }
                 }
             }
-          edamame_read(&cmds[i], rc, buffer, &writers[i]);
+          edamame_read(lru, &cmds[i], rc, buffer, &writers[i]);
+          syslog(LOG_DEBUG, "finish read cycle, entering writer flush");
           // TODO setup POLLOUT when we enter blocking mode
           writer_flush(&writers[i], clientfds[i].fd);
         }
@@ -167,6 +171,9 @@ main(int argc, char **argv)
         }
     }
   openlog("edamame", LOG_PERROR, LOG_USER);
+
+  lru = lru_init(1 << 20, 32, 32);
+  swiper = swiper_init(lru, 1 << 17);
 
   pthread_t threads[num_threads];
   struct thread_pipe tpipes[num_threads];
