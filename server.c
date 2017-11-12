@@ -175,7 +175,7 @@ main(int argc, char **argv)
   openlog("edamame", LOG_PERROR, LOG_USER);
   // setlogmask(LOG_UPTO(LOG_ERR));
 
-  lru = lru_init(1 << 25, 20, 20);
+  lru = lru_init(1 << 25, 20, 4096);
   swiper = swiper_init(lru, 1 << 22);
 
   pthread_t threads[num_threads];

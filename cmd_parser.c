@@ -86,7 +86,7 @@ parse_uint64(uint64_t *dest, char **iter)
 void
 reset_cmd_handler(cmd_handler *cmd)
 {
-  syslog(LOG_DEBUG, "reset cmd");
+  // syslog(LOG_DEBUG, "reset cmd");
   cmd->state = CMD_CLEAN;
   cmd->buf_used = 0;
   cmd->skip_until_newline = false;
@@ -103,7 +103,7 @@ reset_cmd_handler(cmd_handler *cmd)
 ssize_t
 ascii_cmd_error(cmd_handler *cmd, ssize_t nbyte, char *buf)
 {
-  syslog(LOG_DEBUG, "ascii_cmd_error");
+  // syslog(LOG_DEBUG, "ascii_cmd_error");
   ssize_t idx = 0;
   while (idx < nbyte && buf[idx] != '\r')
     idx++;
@@ -209,7 +209,7 @@ ascii_parse_cmd(cmd_handler *cmd, ed_writer *writer)
 {
   char *iter1, *iter2;
   iter1 = cmd->buffer;
-  syslog(LOG_DEBUG, "entering parse_cmd: %s", cmd->buffer);
+  // syslog(LOG_DEBUG, "entering parse_cmd: %s", cmd->buffer);
   if (memeq(cmd->buffer, CMD_STR_SET, sizeof(CMD_STR_SET)))
     {
       cmd->req.op = PROTOCOL_BINARY_CMD_SET;
@@ -718,7 +718,7 @@ ascii_parse_cmd(cmd_handler *cmd, ed_writer *writer)
       cmd->state = ASCII_CMD_READY;
       return;
     }
-  syslog(LOG_DEBUG, "cannot parse %s", cmd->buffer);
+  // syslog(LOG_DEBUG, "cannot parse %s", cmd->buffer);
   writer_reserve(writer, sizeof("ERROR\r\n") - 1);
   writer_append(writer, "ERROR\r\n", sizeof("ERROR\r\n") - 1);
   reset_cmd_handler(cmd);

@@ -69,7 +69,7 @@ edamame_read(lru_t *lru, cmd_handler *cmd, int nbyte, char *data,
             }
           break;
         case ASCII_PENDING_RAWBUF:
-          syslog(LOG_DEBUG, "Enter ASCII_PENDING_RAWBUF");
+          // syslog(LOG_DEBUG, "Enter ASCII_PENDING_RAWBUF");
           idx += ascii_cpbuf(cmd, nbyte - idx, &data[idx], writer);
           if (cmd->state == ASCII_PENDING_PARSE_CMD
               || cmd->state == ASCII_PENDING_GET_MULTI
@@ -77,25 +77,25 @@ edamame_read(lru_t *lru, cmd_handler *cmd, int nbyte, char *data,
             goto advance_state;
           break;
         case ASCII_PENDING_PARSE_CMD:
-          syslog(LOG_DEBUG, "Enter ASCII_PENDING_PARSE_CMD");
+          // syslog(LOG_DEBUG, "Enter ASCII_PENDING_PARSE_CMD");
           ascii_parse_cmd(cmd, writer);
-          syslog(LOG_DEBUG, "CMD parsed");
+          // syslog(LOG_DEBUG, "CMD parsed");
           if (cmd->state == ASCII_CMD_READY)
             goto advance_state;
           break;
         case ASCII_PENDING_GET_MULTI:
         case ASCII_PENDING_GET_CAS_MULTI:
-          syslog(LOG_DEBUG, "Enter get");
+          // syslog(LOG_DEBUG, "Enter get");
           idx += cmd_parse_get(cmd, nbyte - idx, &data[idx], lru, writer);
           break;
         case ASCII_PENDING_VALUE:
           idx += cmd_parse_ascii_value(cmd, nbyte - idx, &data[idx], writer);
-          syslog(LOG_DEBUG, "got value");
+          // syslog(LOG_DEBUG, "got value");
           if (cmd->state == ASCII_CMD_READY)
             goto advance_state;
           break;
         case ASCII_CMD_READY:
-          syslog(LOG_DEBUG, "enter cmd ready");
+          // syslog(LOG_DEBUG, "enter cmd ready");
           process_ascii_cmd(lru, cmd, writer, close_fd);
           reset_cmd_handler(cmd);
           break;
