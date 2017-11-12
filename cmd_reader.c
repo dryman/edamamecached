@@ -31,12 +31,13 @@ char ascii_ok[] = "ASCII OK\r\n";
 char binary_ok[] = "BINARY OK\r\n";
 char txt_stored[] = "STORED\r\n";
 
-void process_ascii_cmd(lru_t *lru, cmd_handler *cmd, ed_writer *writer);
+void process_ascii_cmd(lru_t *lru, cmd_handler *cmd, ed_writer *writer,
+                       bool *close_fd);
 void process_cmd_get(void *lru, cmd_handler *cmd, ed_writer *writer);
 
 void
 edamame_read(lru_t *lru, cmd_handler *cmd, int nbyte, char *data,
-             ed_writer *writer)
+             ed_writer *writer, bool *close_fd)
 {
   int idx = 0;
 
@@ -79,6 +80,8 @@ edamame_read(lru_t *lru, cmd_handler *cmd, int nbyte, char *data,
           syslog(LOG_DEBUG, "Enter ASCII_PENDING_PARSE_CMD");
           ascii_parse_cmd(cmd, writer);
           syslog(LOG_DEBUG, "CMD parsed");
+          if (cmd->state == ASCII_CMD_READY)
+            goto advance_state;
           break;
         case ASCII_PENDING_GET_MULTI:
         case ASCII_PENDING_GET_CAS_MULTI:
@@ -93,7 +96,7 @@ edamame_read(lru_t *lru, cmd_handler *cmd, int nbyte, char *data,
           break;
         case ASCII_CMD_READY:
           syslog(LOG_DEBUG, "enter cmd ready");
-          process_ascii_cmd(lru, cmd, writer);
+          process_ascii_cmd(lru, cmd, writer, close_fd);
           reset_cmd_handler(cmd);
           break;
         case BINARY_PENDING_RAWBUF:
@@ -116,7 +119,8 @@ edamame_read(lru_t *lru, cmd_handler *cmd, int nbyte, char *data,
 }
 
 void
-process_ascii_cmd(lru_t *lru, cmd_handler *cmd, ed_writer *writer)
+process_ascii_cmd(lru_t *lru, cmd_handler *cmd, ed_writer *writer,
+                  bool *close_fd)
 {
   lru_val_t lru_val;
   const char *errstr;
@@ -166,6 +170,13 @@ process_ascii_cmd(lru_t *lru, cmd_handler *cmd, ed_writer *writer)
         {
           // TODO log error
         }
+      break;
+    case PROTOCOL_BINARY_CMD_QUIT:
+      *close_fd = true;
+      break;
+    case PROTOCOL_BINARY_CMD_FLUSH:
+      break;
+    case PROTOCOL_BINARY_CMD_FLUSHQ:
       break;
     default:
       // TODO GAT is also kind of write

@@ -112,8 +112,14 @@ ev_loop(void *context)
             continue;
           if (!(clientfds[i].revents & POLLIN))
             continue;
+          bool close_fd = false;
           rc = recv(clientfds[i].fd, buffer, sizeof(buffer), 0);
-          if (rc <= 0)
+          if (rc > 0)
+            {
+              edamame_read(lru, &cmds[i], rc, buffer, &writers[i], &close_fd);
+              writer_flush(&writers[i], clientfds[i].fd);
+            }
+          if (rc <= 0 || close_fd)
             {
               // We only read once per poll per fd, so we should not see
               // EWOULDBLOCK here.
@@ -135,10 +141,6 @@ ev_loop(void *context)
                     }
                 }
             }
-          edamame_read(lru, &cmds[i], rc, buffer, &writers[i]);
-          syslog(LOG_DEBUG, "finish read cycle, entering writer flush");
-          // TODO setup POLLOUT when we enter blocking mode
-          writer_flush(&writers[i], clientfds[i].fd);
         }
     }
   return NULL;
@@ -171,9 +173,10 @@ main(int argc, char **argv)
         }
     }
   openlog("edamame", LOG_PERROR, LOG_USER);
+  // setlogmask(LOG_UPTO(LOG_ERR));
 
-  lru = lru_init(1 << 20, 32, 32);
-  swiper = swiper_init(lru, 1 << 17);
+  lru = lru_init(1 << 25, 20, 20);
+  swiper = swiper_init(lru, 1 << 22);
 
   pthread_t threads[num_threads];
   struct thread_pipe tpipes[num_threads];

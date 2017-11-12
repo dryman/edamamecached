@@ -24,6 +24,6 @@
 #include "writer.h"
 
 void edamame_read(lru_t *lru, cmd_handler *cmd, int nbyte, char *data,
-                  ed_writer *writer);
+                  ed_writer *writer, bool *close_fd);
 
 #endif

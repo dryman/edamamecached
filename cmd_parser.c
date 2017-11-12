@@ -37,6 +37,8 @@ static char CMD_STR_INCR[5] = "incr ";
 static char CMD_STR_DECR[5] = "decr ";
 static char CMD_STR_TOUCH[6] = "touch ";
 static char CMD_STR_NOREPLY[7] = "noreply";
+static char CMD_STR_QUIT[4] = "quit";
+static char CMD_STR_FLUSH[9] = "flush_all";
 
 static char BAD_DATA_ERROR[] = "CLIENT_ERROR bad data chunk\r\n";
 static char BAD_CMD_ERROR[] = "CLIENT_ERROR bad command line format\r\n";
@@ -663,6 +665,45 @@ ascii_parse_cmd(cmd_handler *cmd, ed_writer *writer)
       if (memeq(iter1, CMD_STR_NOREPLY, sizeof(CMD_STR_NOREPLY)))
         {
           cmd->req.op = PROTOCOL_BINARY_CMD_TOUCHQ;
+          iter1 += sizeof(CMD_STR_NOREPLY);
+          while (*iter1 == ' ')
+            iter1++;
+        }
+      if (*iter1 != '\r' && *iter1 != '\n')
+        {
+          writer_reserve(writer, sizeof(BAD_CMD_ERROR) - 1);
+          writer_append(writer, BAD_CMD_ERROR, sizeof(BAD_CMD_ERROR) - 1);
+          reset_cmd_handler(cmd);
+          return;
+        }
+      cmd->state = ASCII_CMD_READY;
+      return;
+    }
+  if (memeq(cmd->buffer, CMD_STR_QUIT, sizeof(CMD_STR_QUIT)))
+    {
+      iter1 += sizeof(CMD_STR_QUIT);
+      while (*iter1 == ' ')
+        iter1++;
+      if (*iter1 != '\r' && *iter1 != '\n')
+        {
+          writer_reserve(writer, sizeof(BAD_CMD_ERROR) - 1);
+          writer_append(writer, BAD_CMD_ERROR, sizeof(BAD_CMD_ERROR) - 1);
+          reset_cmd_handler(cmd);
+          return;
+        }
+      cmd->req.op = PROTOCOL_BINARY_CMD_QUIT;
+      cmd->state = ASCII_CMD_READY;
+      return;
+    }
+  if (memeq(cmd->buffer, CMD_STR_FLUSH, sizeof(CMD_STR_FLUSH)))
+    {
+      iter1 += sizeof(CMD_STR_FLUSH);
+      while (*iter1 == ' ')
+        iter1++;
+      cmd->req.op = PROTOCOL_BINARY_CMD_FLUSH;
+      if (memeq(iter1, CMD_STR_NOREPLY, sizeof(CMD_STR_NOREPLY)))
+        {
+          cmd->req.op = PROTOCOL_BINARY_CMD_FLUSHQ;
           iter1 += sizeof(CMD_STR_NOREPLY);
           while (*iter1 == ' ')
             iter1++;
