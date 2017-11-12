@@ -82,6 +82,7 @@ struct swiper_t
   // pqueue[x][0] is idx of the bucket
   // pqueue[x][1] is txid
   uint64_t pqueue[0][2];
+  // TODO add mutex for flush_all
 };
 
 swiper_t *swiper_init(lru_t *lru, uint32_t pq_size);

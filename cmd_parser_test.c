@@ -925,6 +925,7 @@ static void
 test_cmd_parse_get(void **context)
 {
   char buf1[] = "012 456 890\r\n";
+  char buf2[] = " \r\n";
   cmd_handler cmd = {};
   cmd.state = ASCII_PENDING_GET_MULTI;
   assert_int_equal(3, cmd_parse_get(&cmd, 4, buf1, NULL, NULL));
@@ -947,6 +948,8 @@ test_cmd_parse_get(void **context)
   assert_ptr_equal(&buf1[8], cmd.key);
   assert_int_equal(3, cmd.req.keylen);
   assert_int_equal(CMD_CLEAN, cmd.state);
+
+  // TODO buf2 should be ERROR
 }
 
 int

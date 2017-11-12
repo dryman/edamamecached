@@ -25,7 +25,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <syslog.h>
-#include <tgmath.h>
 #include <time.h>
 #include <urcu.h>
 
@@ -691,10 +690,7 @@ lru_update_bucket(lru_t *lru, struct bucket *bucket, cmd_handler *cmd,
 
       if (bucket->ibucket.is_numeric_val)
         {
-          if (bucket->ibucket.vallen == 0)
-            current_vallen = 1;
-          else
-            current_vallen = floor(log10(bucket->ibucket.vallen)) + 1;
+          current_vallen = size_t_str_len(bucket->ibucket.vallen);
           bucket->ibucket.is_numeric_val = false;
 
           if (current_vallen + vallen > inline_vallen)

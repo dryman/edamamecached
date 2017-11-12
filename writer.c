@@ -18,6 +18,8 @@
  */
 
 #include <errno.h>
+#include <stdarg.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <syslog.h>
@@ -91,6 +93,21 @@ writer_append(ed_writer *writer, const void *buf, size_t nbyte)
     return false;
   memcpy(&buffer->buffer[buffer->filled_idx], buf, nbyte);
   buffer->filled_idx += nbyte;
+  return true;
+}
+
+bool
+writer_snprintf(ed_writer *writer, size_t nbyte, const char *format, ...)
+{
+  size_t written;
+  va_list args;
+  ed_buffer *buffer = writer->end;
+  if (nbyte > buffer->size - buffer->filled_idx)
+    return false;
+  va_start(args, format);
+  written
+      = vsnprintf(&buffer->buffer[buffer->filled_idx], nbyte, format, args);
+  buffer->filled_idx += written;
   return true;
 }
 

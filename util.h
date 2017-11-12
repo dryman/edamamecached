@@ -23,6 +23,7 @@
 #include <arpa/inet.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include <tgmath.h>
 
 #ifdef __SSE4_1__
 #include <pmmintrin.h>
@@ -193,5 +194,13 @@ ed_isspace(char chr)
 uint64_t strn2uint64(const char *str, size_t n, char **stop);
 uint32_t strn2uint32(const char *str, size_t n, char **stop);
 uint16_t strn2uint16(const char *str, size_t n, char **stop);
+
+static inline size_t
+size_t_str_len(size_t size)
+{
+  if (size == 0)
+    return 1;
+  return floor(log10(size)) + 1;
+}
 
 #endif

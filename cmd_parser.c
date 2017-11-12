@@ -141,11 +141,31 @@ ascii_cpbuf(cmd_handler *cmd, ssize_t nbyte, char *buf, ed_writer *writer)
         return nbyte;
       if (memeq(&buf[idx], CMD_STR_GET, sizeof(CMD_STR_GET)))
         {
+          linebreak = idx + sizeof(CMD_STR_GET);
+          while (linebreak < nbyte && ed_isspace(buf[linebreak]))
+            linebreak++;
+          if (linebreak == nbyte)
+            {
+              writer_reserve(writer, sizeof("ERROR\r\n") - 1);
+              writer_append(writer, "ERROR\r\n", sizeof("ERROR\r\n") - 1);
+              reset_cmd_handler(cmd);
+              return linebreak;
+            }
           cmd->state = ASCII_PENDING_GET_MULTI;
           return idx + sizeof(CMD_STR_GET);
         }
       if (memeq(&buf[idx], CMD_STR_GETS, sizeof(CMD_STR_GETS)))
         {
+          linebreak = idx + sizeof(CMD_STR_GET);
+          while (linebreak < nbyte && ed_isspace(buf[linebreak]))
+            linebreak++;
+          if (linebreak == nbyte)
+            {
+              writer_reserve(writer, sizeof("ERROR\r\n") - 1);
+              writer_append(writer, "ERROR\r\n", sizeof("ERROR\r\n") - 1);
+              reset_cmd_handler(cmd);
+              return linebreak;
+            }
           cmd->state = ASCII_PENDING_GET_CAS_MULTI;
           return idx + sizeof(CMD_STR_GETS);
         }
@@ -216,7 +236,6 @@ ascii_parse_cmd(cmd_handler *cmd, ed_writer *writer)
         }
       if (!parse_uint32(&cmd->req.bodylen, &iter1))
         {
-          syslog(LOG_DEBUG, "3rd number wrong");
           writer_reserve(writer, sizeof(BAD_CMD_ERROR) - 1);
           writer_append(writer, BAD_CMD_ERROR, sizeof(BAD_CMD_ERROR) - 1);
           reset_cmd_handler(cmd);
@@ -659,8 +678,8 @@ ascii_parse_cmd(cmd_handler *cmd, ed_writer *writer)
       return;
     }
   syslog(LOG_DEBUG, "cannot parse %s", cmd->buffer);
-  writer_reserve(writer, sizeof(BAD_CMD_ERROR) - 1);
-  writer_append(writer, BAD_CMD_ERROR, sizeof(BAD_CMD_ERROR) - 1);
+  writer_reserve(writer, sizeof("ERROR\r\n") - 1);
+  writer_append(writer, "ERROR\r\n", sizeof("ERROR\r\n") - 1);
   reset_cmd_handler(cmd);
 }
 
@@ -737,16 +756,7 @@ cmd_parse_get(cmd_handler *cmd, ssize_t nbyte, char *buf, void *lru,
   // idx2 for scanning key
   idx1 = idx2 = 0;
 
-  if (cmd->skip_until_newline)
-    {
-      while (idx2 < nbyte && buf[idx2] != '\n')
-        idx2++;
-      if (idx2 == nbyte)
-        return idx2;
-      reset_cmd_handler(cmd);
-      return idx2 + 1;
-    }
-
+  // pending value from last scan
   if (cmd->buf_used > 0)
     {
       while (idx2 < nbyte && isgraph(buf[idx2]))
@@ -771,11 +781,13 @@ cmd_parse_get(cmd_handler *cmd, ssize_t nbyte, char *buf, void *lru,
           cmd->buf_used += idx2;
           cmd->req.keylen = cmd->buf_used;
           cmd->key = cmd->buffer;
-          // process get, by GET/GET_CAS
           process_cmd_get(lru, cmd, writer);
-          cmd->buf_used = 0;
-          cmd->state = CMD_CLEAN;
-          return idx2;
+          writer_reserve(writer, sizeof("END\r\n") - 1);
+          writer_append(writer, "END\r\n", sizeof("END\r\n") - 1);
+          reset_cmd_handler(cmd);
+          if (idx2 < nbyte && buf[idx2 + 1] == '\n')
+            return idx2 + 2;
+          return idx2 + 1;
         }
       if (buf[idx2] != ' ')
         {
@@ -801,7 +813,11 @@ cmd_parse_get(cmd_handler *cmd, ssize_t nbyte, char *buf, void *lru,
     return idx1;
   if (buf[idx1] == '\r')
     {
-      cmd->state = CMD_CLEAN;
+      writer_reserve(writer, sizeof("END\r\n") - 1);
+      writer_append(writer, "END\r\n", sizeof("END\r\n") - 1);
+      reset_cmd_handler(cmd);
+      if (idx1 < nbyte - 1 && buf[idx1 + 1] == '\n')
+        return idx1 + 2;
       return idx1 + 1;
     }
   idx2 = idx1;
@@ -835,7 +851,11 @@ cmd_parse_get(cmd_handler *cmd, ssize_t nbyte, char *buf, void *lru,
       cmd->key = &buf[idx1];
       // process get/gets
       process_cmd_get(lru, cmd, writer);
-      cmd->state = CMD_CLEAN;
+      writer_reserve(writer, sizeof("END\r\n") - 1);
+      writer_append(writer, "END\r\n", sizeof("END\r\n") - 1);
+      reset_cmd_handler(cmd);
+      if (idx2 < nbyte - 1 && buf[idx2 + 1] == '\n')
+        return idx2 + 2;
       return idx2 + 1;
     }
   cmd->req.keylen = idx2 - idx1;
