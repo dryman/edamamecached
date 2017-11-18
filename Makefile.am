@@ -22,7 +22,7 @@ lru_test_SOURCES = \
   cityhash.c \
   util.c
 lru_test_CFLAGS = @cmocka_CFLAGS@
-lru_test_LDADD = @cmocka_LIBS@ -lurcu
+lru_test_LDADD = @cmocka_LIBS@ -lurcu -pthread -lm
 #lru_test_LDFLAGS = -static
 
 edamamecached_SOURCES = \
@@ -35,6 +35,7 @@ edamamecached_SOURCES = \
   writer.h \
   cityhash.c \
   cityhash.h \
+  largeint.h \
   lru.c \
   lru.h \
   cmd_reader.c \

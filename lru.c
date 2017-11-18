@@ -266,7 +266,7 @@ lru_get(lru_t *lru, cmd_handler *cmd, lru_val_t *lru_val)
           magic = atomic_load_explicit(&bucket->magic, memory_order_acquire);
           if ((magic & 0x3) == 0)
             {
-              lru_val->errcode = STATUS_KEY_NOT_FOUND;
+              lru_val->rescode = PROTOCOL_BINARY_RESPONSE_KEY_ENOENT;
               return false;
             }
           if ((magic & 0x3) == 2)
@@ -282,7 +282,7 @@ lru_get(lru_t *lru, cmd_handler *cmd, lru_val_t *lru_val)
                 goto next_iter;
               txid = atomic_load_explicit(&lru->txid, memory_order_relaxed);
               bucket->txid = txid;
-              lru_val->errcode = STATUS_NOERROR;
+              lru_val->rescode = PROTOCOL_BINARY_RESPONSE_SUCCESS;
               lru_val->is_numeric_val = bucket->ibucket.is_numeric_val;
               lru_val->vallen = bucket->ibucket.vallen;
               if (!lru_val->is_numeric_val)
@@ -309,7 +309,7 @@ lru_get(lru_t *lru, cmd_handler *cmd, lru_val_t *lru_val)
                 goto next_iter;
               txid = atomic_load_explicit(&lru->txid, memory_order_relaxed);
               bucket->txid = txid;
-              lru_val->errcode = STATUS_NOERROR;
+              lru_val->rescode = PROTOCOL_BINARY_RESPONSE_SUCCESS;
               lru_val->is_numeric_val = bucket->ibucket.is_numeric_val;
               lru_val->vallen = ibucket->vallen;
               if (!lru_val->is_numeric_val)
@@ -335,7 +335,7 @@ lru_get(lru_t *lru, cmd_handler *cmd, lru_val_t *lru_val)
       probing_key += up32key;
       idx_next = fast_mod_scale(probing_key, mask, lru->capacity_ms4b);
     }
-  lru_val->errcode = STATUS_KEY_NOT_FOUND;
+  lru_val->rescode = PROTOCOL_BINARY_RESPONSE_KEY_ENOENT;
   return false;
 }
 
@@ -401,7 +401,7 @@ lru_upsert(lru_t *lru, cmd_handler *cmd, lru_val_t *lru_val)
                   if (cmd->extra.numeric.init_value == UINT64_MAX)
                     {
                       // TODO document UINT64_MAX behavior
-                      lru_val->errcode = STATUS_KEY_NOT_FOUND;
+                      lru_val->rescode = PROTOCOL_BINARY_RESPONSE_KEY_ENOENT;
                       return false;
                     }
                   break;
@@ -411,14 +411,14 @@ lru_upsert(lru_t *lru, cmd_handler *cmd, lru_val_t *lru_val)
                 case PROTOCOL_BINARY_CMD_APPENDQ:
                 case PROTOCOL_BINARY_CMD_PREPEND:
                 case PROTOCOL_BINARY_CMD_PREPENDQ:
-                  lru_val->errcode = STATUS_ITEM_NOT_STORED;
+                  lru_val->rescode = PROTOCOL_BINARY_RESPONSE_NOT_STORED;
                   return false;
                 case PROTOCOL_BINARY_CMD_TOUCH:
                 case PROTOCOL_BINARY_CMD_TOUCHQ:
-                  lru_val->errcode = STATUS_KEY_NOT_FOUND;
+                  lru_val->rescode = PROTOCOL_BINARY_RESPONSE_KEY_ENOENT;
                   return false;
                 default:
-                  lru_val->errcode = STATUS_INTERNAL_ERR;
+                  lru_val->rescode = PROTOCOL_BINARY_RESPONSE_INTERNAL_ERR;
                   return false;
                 }
               new_magic = magic | 0x80;
@@ -463,7 +463,7 @@ lru_upsert(lru_t *lru, cmd_handler *cmd, lru_val_t *lru_val)
           if (cmd->req.op == PROTOCOL_BINARY_CMD_ADD
               || cmd->req.op == PROTOCOL_BINARY_CMD_ADDQ)
             {
-              lru_val->errcode = STATUS_ITEM_NOT_STORED;
+              lru_val->rescode = PROTOCOL_BINARY_RESPONSE_NOT_STORED;
               return false;
             }
           uint8_t tmp_idx;
@@ -491,7 +491,7 @@ lru_upsert(lru_t *lru, cmd_handler *cmd, lru_val_t *lru_val)
           probe++;
         }
     }
-  lru_val->errcode = STATUS_BUSY;
+  lru_val->rescode = PROTOCOL_BINARY_RESPONSE_BUSY;
   return false;
 }
 
@@ -560,7 +560,7 @@ lru_write_empty_bucket(lru_t *lru, struct bucket *bucket, cmd_handler *cmd,
                                     memory_order_relaxed);
         }
       atomic_fetch_add_explicit(&lru->objcnt, 1, memory_order_relaxed);
-      lru_val->errcode = STATUS_NOERROR;
+      lru_val->rescode = PROTOCOL_BINARY_RESPONSE_SUCCESS;
       lru_val->is_numeric_val = false;
       return;
     case PROTOCOL_BINARY_CMD_INCREMENT:
@@ -597,12 +597,12 @@ lru_write_empty_bucket(lru_t *lru, struct bucket *bucket, cmd_handler *cmd,
       else
         bucket->ibucket.vallen -= cmd->extra.numeric.addition_value;
       atomic_fetch_add_explicit(&lru->objcnt, 1, memory_order_relaxed);
-      lru_val->errcode = STATUS_NOERROR;
+      lru_val->rescode = PROTOCOL_BINARY_RESPONSE_SUCCESS;
       lru_val->is_numeric_val = true;
       lru_val->vallen = bucket->ibucket.vallen;
       return;
     default:
-      lru_val->errcode = STATUS_INTERNAL_ERR;
+      lru_val->rescode = PROTOCOL_BINARY_RESPONSE_INTERNAL_ERR;
     }
 }
 
@@ -629,7 +629,7 @@ lru_update_bucket(lru_t *lru, struct bucket *bucket, cmd_handler *cmd,
       // same as replace logic.
       if (cmd->req.cas > 0 && cmd->req.cas != bucket->ibucket.cas)
         {
-          lru_val->errcode = STATUS_KEY_EXISTS;
+          lru_val->rescode = PROTOCOL_BINARY_RESPONSE_KEY_ENOENT;
           return false;
         }
     case PROTOCOL_BINARY_CMD_REPLACE:
@@ -676,7 +676,7 @@ lru_update_bucket(lru_t *lru, struct bucket *bucket, cmd_handler *cmd,
           atomic_fetch_add_explicit(&lru->inline_acc_vallen, vallen,
                                     memory_order_relaxed);
         }
-      lru_val->errcode = STATUS_NOERROR;
+      lru_val->rescode = PROTOCOL_BINARY_RESPONSE_SUCCESS;
       return true;
     case PROTOCOL_BINARY_CMD_APPEND:
     case PROTOCOL_BINARY_CMD_APPENDQ:
@@ -726,7 +726,7 @@ lru_update_bucket(lru_t *lru, struct bucket *bucket, cmd_handler *cmd,
               sprintf((char *)valiter, "%zu", bucket->ibucket.vallen);
               bucket->ibucket.vallen = current_vallen + vallen;
             }
-          lru_val->errcode = STATUS_NOERROR;
+          lru_val->rescode = PROTOCOL_BINARY_RESPONSE_SUCCESS;
           return true;
         }
 
@@ -785,7 +785,7 @@ lru_update_bucket(lru_t *lru, struct bucket *bucket, cmd_handler *cmd,
                                     vallen + current_vallen,
                                     memory_order_relaxed);
           bucket->ibucket.vallen = current_vallen + vallen;
-          lru_val->errcode = STATUS_NOERROR;
+          lru_val->rescode = PROTOCOL_BINARY_RESPONSE_SUCCESS;
           return true;
         }
       else
@@ -808,7 +808,7 @@ lru_update_bucket(lru_t *lru, struct bucket *bucket, cmd_handler *cmd,
           atomic_fetch_add_explicit(&lru->inline_acc_vallen, vallen,
                                     memory_order_relaxed);
           bucket->ibucket.vallen = current_vallen + vallen;
-          lru_val->errcode = STATUS_NOERROR;
+          lru_val->rescode = PROTOCOL_BINARY_RESPONSE_SUCCESS;
           return true;
         }
     case PROTOCOL_BINARY_CMD_INCREMENT:
@@ -832,7 +832,7 @@ lru_update_bucket(lru_t *lru, struct bucket *bucket, cmd_handler *cmd,
             {
               syslog(LOG_ERR,
                      "cannot increment or decrement non-numeric value");
-              lru_val->errcode = STATUS_NON_NUMERIC;
+              lru_val->rescode = PROTOCOL_BINARY_RESPONSE_DELTA_BADVAL;
               return false;
             }
           if (bucket->ibucket.vallen > inline_vallen)
@@ -870,7 +870,7 @@ lru_update_bucket(lru_t *lru, struct bucket *bucket, cmd_handler *cmd,
       // the expiration.
       if (cmd->extra.numeric.init_value != UINT64_MAX)
         bucket->ibucket.epoch = now + cmd->extra.numeric.expiration;
-      lru_val->errcode = STATUS_NOERROR;
+      lru_val->rescode = PROTOCOL_BINARY_RESPONSE_SUCCESS;
       lru_val->is_numeric_val = true;
       lru_val->vallen = bucket->ibucket.vallen;
       return true;
@@ -879,13 +879,13 @@ lru_update_bucket(lru_t *lru, struct bucket *bucket, cmd_handler *cmd,
       txid = atomic_load_explicit(&lru->txid, memory_order_relaxed);
       bucket->txid = txid;
       bucket->ibucket.epoch = now + cmd->extra.twoval.expiration;
-      lru_val->errcode = STATUS_NOERROR;
+      lru_val->rescode = PROTOCOL_BINARY_RESPONSE_SUCCESS;
       return true;
     default:
       break;
     }
   syslog(LOG_ERR, "Unknown op %d", cmd->req.op);
-  lru_val->errcode = STATUS_INTERNAL_ERR;
+  lru_val->rescode = PROTOCOL_BINARY_RESPONSE_INTERNAL_ERR;
   return false;
 }
 

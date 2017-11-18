@@ -1132,7 +1132,11 @@ ssize_t
 binary_cmd_parse_value(cmd_handler *cmd, ssize_t nbyte, char *buf,
                        ed_writer *writer)
 {
-  ssize_t partial_len;
+  ssize_t partial_len, vallen;
+
+  // switch different op to decide the vallen
+
+  // TODO bodylen = keylen + extra + vallen
   if (cmd->value_stored == 0 && nbyte >= cmd->req.bodylen)
     {
       cmd->value = buf;

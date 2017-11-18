@@ -52,18 +52,13 @@ edamame_read(lru_t *lru, cmd_handler *cmd, int nbyte, char *data,
               if (data[idx] == '\x80')
                 {
                   idx += binary_cpbuf(cmd, nbyte - idx, &data[idx], writer);
-                  if (cmd->state == BINARY_PENDING_PARSE_EXTRA
-                      || cmd->state == BINARY_PENDING_PARSE_KEY
-                      || cmd->state == BINARY_PENDING_VALUE
-                      || cmd->state == BINARY_CMD_READY)
+                  if (cmd->state != BINARY_PENDING_RAWBUF)
                     goto advance_state;
                 }
               else
                 {
                   idx += ascii_cpbuf(cmd, nbyte - idx, &data[idx], writer);
-                  if (cmd->state == ASCII_PENDING_PARSE_CMD
-                      || cmd->state == ASCII_PENDING_GET_MULTI
-                      || cmd->state == ASCII_PENDING_GET_CAS_MULTI)
+                  if (cmd->state != ASCII_PENDING_RAWBUF)
                     goto advance_state;
                 }
             }
@@ -71,16 +66,14 @@ edamame_read(lru_t *lru, cmd_handler *cmd, int nbyte, char *data,
         case ASCII_PENDING_RAWBUF:
           // syslog(LOG_DEBUG, "Enter ASCII_PENDING_RAWBUF");
           idx += ascii_cpbuf(cmd, nbyte - idx, &data[idx], writer);
-          if (cmd->state == ASCII_PENDING_PARSE_CMD
-              || cmd->state == ASCII_PENDING_GET_MULTI
-              || cmd->state == ASCII_PENDING_GET_CAS_MULTI)
+          if (cmd->state != ASCII_PENDING_RAWBUF)
             goto advance_state;
           break;
         case ASCII_PENDING_PARSE_CMD:
           // syslog(LOG_DEBUG, "Enter ASCII_PENDING_PARSE_CMD");
           ascii_parse_cmd(cmd, writer);
           // syslog(LOG_DEBUG, "CMD parsed");
-          if (cmd->state == ASCII_CMD_READY)
+          if (cmd->state != ASCII_PENDING_PARSE_CMD)
             goto advance_state;
           break;
         case ASCII_PENDING_GET_MULTI:
@@ -91,7 +84,7 @@ edamame_read(lru_t *lru, cmd_handler *cmd, int nbyte, char *data,
         case ASCII_PENDING_VALUE:
           idx += cmd_parse_ascii_value(cmd, nbyte - idx, &data[idx], writer);
           // syslog(LOG_DEBUG, "got value");
-          if (cmd->state == ASCII_CMD_READY)
+          if (cmd->state != ASCII_PENDING_VALUE)
             goto advance_state;
           break;
         case ASCII_CMD_READY:
@@ -101,15 +94,16 @@ edamame_read(lru_t *lru, cmd_handler *cmd, int nbyte, char *data,
           break;
         case BINARY_PENDING_RAWBUF:
           idx += binary_cpbuf(cmd, nbyte - idx, &data[idx], writer);
-          break;
+          goto advance_state;
         case BINARY_PENDING_PARSE_EXTRA:
           idx += binary_cmd_parse_extra(cmd, nbyte - idx, &data[idx], writer);
+          goto advance_state;
         case BINARY_PENDING_PARSE_KEY:
           idx += binary_cmd_parse_key(cmd, nbyte - idx, &data[idx], writer);
-          break;
+          goto advance_state;
         case BINARY_PENDING_VALUE:
           idx += binary_cmd_parse_value(cmd, nbyte - idx, &data[idx], writer);
-          break;
+          goto advance_state;
         case BINARY_CMD_READY:
           writer_reserve(writer, sizeof(binary_ok) - 1);
           writer_append(writer, binary_ok, sizeof(binary_ok) - 1);
@@ -131,24 +125,29 @@ process_ascii_cmd(lru_t *lru, cmd_handler *cmd, ed_writer *writer,
     case PROTOCOL_BINARY_CMD_SET:
     case PROTOCOL_BINARY_CMD_ADD:
     case PROTOCOL_BINARY_CMD_REPLACE:
-    case PROTOCOL_BINARY_CMD_INCREMENT:
-    case PROTOCOL_BINARY_CMD_DECREMENT:
     case PROTOCOL_BINARY_CMD_APPEND:
     case PROTOCOL_BINARY_CMD_PREPEND:
       if (lru_upsert(lru, cmd, &lru_val))
         {
-          if (cmd->req.op == PROTOCOL_BINARY_CMD_INCREMENT
-              || cmd->req.op == PROTOCOL_BINARY_CMD_DECREMENT)
-            {
-              write_len = size_t_str_len(lru_val.vallen);
-              writer_reserve(writer, write_len + 2);
-              writer_snprintf(writer, write_len, "%zu\r\n", lru_val.vallen);
-            }
-          else
-            {
-              writer_reserve(writer, sizeof(txt_stored) - 1);
-              writer_append(writer, txt_stored, sizeof(txt_stored) - 1);
-            }
+          writer_reserve(writer, sizeof(txt_stored) - 1);
+          writer_append(writer, txt_stored, sizeof(txt_stored) - 1);
+        }
+      else
+        {
+          get_errstr(&errstr, &errlen, lru_val.errcode);
+          writer_reserve(writer, errlen);
+          writer_append(writer, errstr, errlen);
+          // TODO form is different to memcached
+          // need \r\n
+        }
+      break;
+    case PROTOCOL_BINARY_CMD_INCREMENT:
+    case PROTOCOL_BINARY_CMD_DECREMENT:
+      if (lru_upsert(lru, cmd, &lru_val))
+        {
+          write_len = size_t_str_len(lru_val.vallen);
+          writer_reserve(writer, write_len + 2);
+          writer_snprintf(writer, write_len, "%zu\r\n", lru_val.vallen);
         }
       else
         {
@@ -184,7 +183,6 @@ process_ascii_cmd(lru_t *lru, cmd_handler *cmd, ed_writer *writer,
     }
 }
 
-// TODO rename as ascii_cmd_get?
 void
 process_cmd_get(void *lru_, cmd_handler *cmd, ed_writer *writer)
 {
@@ -243,5 +241,80 @@ retry:
   else
     {
       rcu_read_unlock();
+    }
+}
+
+void
+process_binary_cmd(lru_t *lru, cmd_handler *cmd, ed_writer *writer,
+                  bool *close_fd)
+{
+  lru_val_t lru_val;
+  size_t write_len;
+  struct cmd_res_header header;
+  union cmd_extra extra;
+
+  header.magic = 0x81;
+  header.op = cmd->req.op;
+
+  switch (cmd->req.op)
+    {
+    case PROTOCOL_BINARY_CMD_GET:
+      if (lru_get(lru, cmd, &lru_val))
+        {
+          header.keylen = 0;
+          header.extralen = 4;
+          header.data_type = 0;
+          header.status = lru_val.status;
+          header.bodylen = 4 + lru_val.vallen;
+          header.opaque = cmd->req.opaque;
+          header.cas = lru_val.cas;
+          // to network byte order
+          // write value
+        }
+      break;
+    case PROTOCOL_BINARY_CMD_SET:
+    case PROTOCOL_BINARY_CMD_ADD:
+    case PROTOCOL_BINARY_CMD_REPLACE:
+    case PROTOCOL_BINARY_CMD_INCREMENT:
+    case PROTOCOL_BINARY_CMD_DECREMENT:
+    case PROTOCOL_BINARY_CMD_APPEND:
+    case PROTOCOL_BINARY_CMD_PREPEND:
+      if (lru_upsert(lru, cmd, &lru_val))
+        {
+          header.op = lru_val.errcode;
+          writer_reserve(writer, sizeof(txt_stored) - 1);
+          writer_append(writer, txt_stored, sizeof(txt_stored) - 1);
+        }
+      else
+        {
+          get_errstr(&errstr, &errlen, lru_val.errcode);
+          writer_reserve(writer, errlen);
+          writer_append(writer, errstr, errlen);
+          // TODO form is different to memcached
+          // need \r\n
+        }
+      break;
+    case PROTOCOL_BINARY_CMD_SETQ:
+    case PROTOCOL_BINARY_CMD_ADDQ:
+    case PROTOCOL_BINARY_CMD_REPLACEQ:
+    case PROTOCOL_BINARY_CMD_INCREMENTQ:
+    case PROTOCOL_BINARY_CMD_DECREMENTQ:
+    case PROTOCOL_BINARY_CMD_APPENDQ:
+    case PROTOCOL_BINARY_CMD_PREPENDQ:
+      if (!lru_upsert(lru, cmd, &lru_val))
+        {
+          // TODO log error
+        }
+      break;
+    case PROTOCOL_BINARY_CMD_QUIT:
+      *close_fd = true;
+      break;
+    case PROTOCOL_BINARY_CMD_FLUSH:
+      break;
+    case PROTOCOL_BINARY_CMD_FLUSHQ:
+      break;
+    default:
+      // TODO GAT is also kind of write
+      break;
     }
 }

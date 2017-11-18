@@ -43,27 +43,27 @@ cmd_res_hton(cmd_res_header *res)
 #define EMAP(x) (((x)&0xf) | (((x)&0x80) >> 3))
 
 const char *errstring[] = {
-  [EMAP(STATUS_NOERROR)] = "No error",
-  [EMAP(STATUS_KEY_NOT_FOUND)] = "Key not found",
-  [EMAP(STATUS_KEY_EXISTS)] = "Key exists",
-  [EMAP(STATUS_VAL_TOO_LARGE)] = "Value too large",
-  [EMAP(STATUS_INVALID_ARG)] = "Invalid arguments",
-  [EMAP(STATUS_ITEM_NOT_STORED)] = "Item not stored",
-  [EMAP(STATUS_NON_NUMERIC)] = "Incr/Decr on non-numeric value",
-  [EMAP(STATUS_VBUCKET_IN_OTHER_SERV)]
+  [EMAP(PROTOCOL_BINARY_RESPONSE_SUCCESS)] = "No error",
+  [EMAP(PROTOCOL_BINARY_RESPONSE_KEY_ENOENT)] = "Key not found",
+  [EMAP(PROTOCOL_BINARY_RESPONSE_KEY_EEXISTS)] = "Key exists",
+  [EMAP(PROTOCOL_BINARY_RESPONSE_E2BIG)] = "Value too large",
+  [EMAP(PROTOCOL_BINARY_RESPONSE_EINVAL)] = "Invalid arguments",
+  [EMAP(PROTOCOL_BINARY_RESPONSE_NOT_STORED)] = "Item not stored",
+  [EMAP(PROTOCOL_BINARY_RESPONSE_DELTA_BADVAL)] = "Incr/Decr on non-numeric value",
+  [EMAP(PROTOCOL_BINARY_RESPONSE_VBUCKET_IN_OTHER_SERV)]
   = "The vbucket belongs to another server",
-  [EMAP(STATUS_AUTH_ERROR)] = "Authentication error",
-  [EMAP(STATUS_AUTH_CONT)] = "Authentication continue",
-  [EMAP(STATUS_UNKNOWN_CMD)] = "Unknown command",
-  [EMAP(STATUS_OUT_OF_MEM)] = "Out of memory",
-  [EMAP(STATUS_NOT_SUPPORTED)] = "Not supported",
-  [EMAP(STATUS_INTERNAL_ERR)] = "Internal error",
-  [EMAP(STATUS_BUSY)] = "Busy",
-  [EMAP(STATUS_TMP_FAILURE)] = "Temporary failure",
+  [EMAP(PROTOCOL_BINARY_RESPONSE_AUTH_ERROR)] = "Authentication error",
+  [EMAP(PROTOCOL_BINARY_RESPONSE_AUTH_CONTINUE)] = "Authentication continue",
+  [EMAP(PROTOCOL_BINARY_RESPONSE_UNKNOWN_COMMAND)] = "Unknown command",
+  [EMAP(PROTOCOL_BINARY_RESPONSE_ENOMEM)] = "Out of memory",
+  [EMAP(PROTOCOL_BINARY_RESPONSE_NOT_SUPPORTED)] = "Not supported",
+  [EMAP(PROTOCOL_BINARY_RESPONSE_INTERNAL_ERR)] = "Internal error",
+  [EMAP(PROTOCOL_BINARY_RESPONSE_BUSY)] = "Busy",
+  [EMAP(PROTOCOL_BINARY_RESPONSE_TMP_FAILURE)] = "Temporary failure",
 };
 
 void
-get_errstr(const char **ptr, size_t *len, enum cmd_errcode code)
+get_errstr(const char **ptr, size_t *len, enum cmd_rescode code)
 {
   const char *err = errstring[code];
   *len = strlen(err);

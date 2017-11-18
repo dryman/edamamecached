@@ -58,7 +58,7 @@ struct lru_t
 
 struct lru_val_t
 {
-  enum cmd_errcode errcode;
+  enum cmd_rescode rescode;
   bool is_numeric_val;
   size_t vallen;
   void *value;
